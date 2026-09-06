@@ -20,7 +20,7 @@ jobs:
         with:
           workspaces: crates/bn-app -> ../../target
 
-      - uses: cargo-bins/cargo-binstall@v1
+      - uses: cargo-bins/cargo-binstall@main
 
       - name: Install dioxus-cli
         run: cargo binstall dioxus-cli --no-confirm --locked
@@ -58,7 +58,7 @@ jobs:
         with:
           workspaces: crates/bn-app -> ../../target
 
-      - uses: cargo-bins/cargo-binstall@v1
+      - uses: cargo-bins/cargo-binstall@main
 
       - name: Install dioxus-cli
         run: cargo binstall dioxus-cli --no-confirm --locked
@@ -96,7 +96,7 @@ jobs:
         with:
           workspaces: crates/bn-app -> ../../target
 
-      - uses: cargo-bins/cargo-binstall@v1
+      - uses: cargo-bins/cargo-binstall@main
 
       - name: Install dioxus-cli
         run: cargo binstall dioxus-cli --no-confirm --locked
@@ -125,7 +125,7 @@ jobs:
         with:
           workspaces: crates/bn-app -> ../../target
 
-      - uses: cargo-bins/cargo-binstall@v1
+      - uses: cargo-bins/cargo-binstall@main
 
       - name: Install dioxus-cli
         run: cargo binstall dioxus-cli --no-confirm --locked
