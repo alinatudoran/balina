@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BIF VERSION="0.3">
+<NETWORK>
+<NAME>Chest Clinic (Asia)</NAME>
+<VARIABLE TYPE="nature">
+  <NAME>Smoking</NAME>
+  <OUTCOME>yes</OUTCOME>
+  <OUTCOME>no</OUTCOME>
+  <PROPERTY>position = (480, 40)</PROPERTY>
+</VARIABLE>
+<VARIABLE TYPE="nature">
+  <NAME>VisitAsia</NAME>
+  <OUTCOME>yes</OUTCOME>
+  <OUTCOME>no</OUTCOME>
+  <PROPERTY>position = (40, 40)</PROPERTY>
+</VARIABLE>
+<VARIABLE TYPE="nature">
+  <NAME>LungCancer</NAME>
+  <OUTCOME>yes</OUTCOME>
+  <OUTCOME>no</OUTCOME>
+  <PROPERTY>position = (300, 200)</PROPERTY>
+</VARIABLE>
+<VARIABLE TYPE="nature">
+  <NAME>Bronchitis</NAME>
+  <OUTCOME>yes</OUTCOME>
+  <OUTCOME>no</OUTCOME>
+  <PROPERTY>position = (620, 200)</PROPERTY>
+</VARIABLE>
+<VARIABLE TYPE="nature">
+  <NAME>Tuberculosis</NAME>
+  <OUTCOME>yes</OUTCOME>
+  <OUTCOME>no</OUTCOME>
+  <PROPERTY>position = (40, 200)</PROPERTY>
+</VARIABLE>
+<VARIABLE TYPE="nature">
+  <NAME>TbOrCa</NAME>
+  <OUTCOME>yes</OUTCOME>
+  <OUTCOME>no</OUTCOME>
+  <PROPERTY>position = (170, 360)</PROPERTY>
+</VARIABLE>
+<VARIABLE TYPE="nature">
+  <NAME>XRay</NAME>
+  <OUTCOME>yes</OUTCOME>
+  <OUTCOME>no</OUTCOME>
+  <PROPERTY>position = (40, 520)</PROPERTY>
+</VARIABLE>
+<VARIABLE TYPE="nature">
+  <NAME>Dyspnea</NAME>
+  <OUTCOME>yes</OUTCOME>
+  <OUTCOME>no</OUTCOME>
+  <PROPERTY>position = (400, 520)</PROPERTY>
+</VARIABLE>
+<DEFINITION>
+  <FOR>Smoking</FOR>
+  <TABLE>0.5 0.5</TABLE>
+</DEFINITION>
+<DEFINITION>
+  <FOR>VisitAsia</FOR>
+  <TABLE>0.01 0.99</TABLE>
+</DEFINITION>
+<DEFINITION>
+  <FOR>LungCancer</FOR>
+  <GIVEN>Smoking</GIVEN>
+  <TABLE>0.1 0.9 0.01 0.99</TABLE>
+</DEFINITION>
+<DEFINITION>
+  <FOR>Bronchitis</FOR>
+  <GIVEN>Smoking</GIVEN>
+  <TABLE>0.6 0.4 0.3 0.7</TABLE>
+</DEFINITION>
+<DEFINITION>
+  <FOR>Tuberculosis</FOR>
+  <GIVEN>VisitAsia</GIVEN>
+  <TABLE>0.05 0.95 0.01 0.99</TABLE>
+</DEFINITION>
+<DEFINITION>
+  <FOR>TbOrCa</FOR>
+  <GIVEN>Tuberculosis</GIVEN>
+  <GIVEN>LungCancer</GIVEN>
+  <TABLE>1 0 1 0 1 0 0 1</TABLE>
+</DEFINITION>
+<DEFINITION>
+  <FOR>XRay</FOR>
+  <GIVEN>TbOrCa</GIVEN>
+  <TABLE>0.98 0.02 0.05 0.95</TABLE>
+</DEFINITION>
+<DEFINITION>
+  <FOR>Dyspnea</FOR>
+  <GIVEN>TbOrCa</GIVEN>
+  <GIVEN>Bronchitis</GIVEN>
+  <TABLE>0.9 0.1 0.7 0.3 0.8 0.2 0.1 0.9</TABLE>
+</DEFINITION>
+</NETWORK>
+</BIF>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<smile version="1.0" id="Umbrella" numsamples="10000">
+<nodes>
+  <cpt id="Weather">
+    <state id="rain" />
+    <state id="sun" />
+    <probabilities>0.3 0.7</probabilities>
+  </cpt>
+  <cpt id="Forecast">
+    <state id="rainy" />
+    <state id="sunny" />
+    <parents>Weather</parents>
+    <probabilities>0.8 0.2 0.15 0.85</probabilities>
+  </cpt>
+  <decision id="Umbrella">
+    <state id="take" />
+    <state id="leave" />
+    <parents>Forecast</parents>
+  </decision>
+  <utility id="Satisfaction">
+    <parents>Weather Umbrella</parents>
+    <utilities>70 0 75 100</utilities>
+  </utility>
+</nodes>
+<extensions>
+  <genie version="1.0" app="balina" name="Umbrella">
+    <node id="Weather"><name>Weather</name><position>60 60 180 120</position></node>
+    <node id="Forecast"><name>Forecast</name><position>60 260 180 320</position></node>
+    <node id="Umbrella"><name>Umbrella</name><position>360 260 480 320</position></node>
+    <node id="Satisfaction"><name>Satisfaction</name><position>360 60 480 120</position></node>
+  </genie>
+</extensions>
+</smile>

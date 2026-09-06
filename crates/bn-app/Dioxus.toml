@@ -1,0 +1,16 @@
+# dx bundle configuration (`dx bundle --release`). The plain
+# `cargo build --release` binary has no icon — OS app icons live in the
+# bundle (.app/.msi/.deb), so releases meant for the desktop go through dx.
+
+[application]
+name = "Balina"
+
+[bundle]
+identifier = "com.alinatudoran.balina"
+publisher = "Alina Tudoran"
+signing_identity = "-"      # "-" tells codesign to sign ad-hoc
+hardened_runtime = false    # ad-hoc signatures don't support hardened runtime well
+# Source for the platform icons (macOS .icns, Windows .ico, Linux pngs);
+# dx converts from these at bundle time.
+icon = ["assets/icon.png"]
+category = "public.app-category.productivity"

@@ -1,0 +1,268 @@
+{
+  "format": "balina-net",
+  "version": 1,
+  "name": "Chest Clinic (Asia)",
+  "comment": "",
+  "nodes": [
+    {
+      "name": "Smoking",
+      "title": "",
+      "kind": "Chance",
+      "states": [
+        {
+          "name": "yes",
+          "value": null
+        },
+        {
+          "name": "no",
+          "value": null
+        }
+      ],
+      "parents": [],
+      "table": [
+        0.5,
+        0.5
+      ],
+      "experience": null,
+      "comment": ""
+    },
+    {
+      "name": "VisitAsia",
+      "title": "",
+      "kind": "Chance",
+      "states": [
+        {
+          "name": "yes",
+          "value": null
+        },
+        {
+          "name": "no",
+          "value": null
+        }
+      ],
+      "parents": [],
+      "table": [
+        0.01,
+        0.99
+      ],
+      "experience": null,
+      "comment": ""
+    },
+    {
+      "name": "LungCancer",
+      "title": "",
+      "kind": "Chance",
+      "states": [
+        {
+          "name": "yes",
+          "value": null
+        },
+        {
+          "name": "no",
+          "value": null
+        }
+      ],
+      "parents": [
+        "Smoking"
+      ],
+      "table": [
+        0.1,
+        0.9,
+        0.01,
+        0.99
+      ],
+      "experience": null,
+      "comment": ""
+    },
+    {
+      "name": "Bronchitis",
+      "title": "",
+      "kind": "Chance",
+      "states": [
+        {
+          "name": "yes",
+          "value": null
+        },
+        {
+          "name": "no",
+          "value": null
+        }
+      ],
+      "parents": [
+        "Smoking"
+      ],
+      "table": [
+        0.6,
+        0.4,
+        0.3,
+        0.7
+      ],
+      "experience": null,
+      "comment": ""
+    },
+    {
+      "name": "Tuberculosis",
+      "title": "",
+      "kind": "Chance",
+      "states": [
+        {
+          "name": "yes",
+          "value": null
+        },
+        {
+          "name": "no",
+          "value": null
+        }
+      ],
+      "parents": [
+        "VisitAsia"
+      ],
+      "table": [
+        0.05,
+        0.95,
+        0.01,
+        0.99
+      ],
+      "experience": null,
+      "comment": ""
+    },
+    {
+      "name": "TbOrCa",
+      "title": "",
+      "kind": "Chance",
+      "states": [
+        {
+          "name": "yes",
+          "value": null
+        },
+        {
+          "name": "no",
+          "value": null
+        }
+      ],
+      "parents": [
+        "Tuberculosis",
+        "LungCancer"
+      ],
+      "table": [
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "experience": null,
+      "comment": ""
+    },
+    {
+      "name": "XRay",
+      "title": "",
+      "kind": "Chance",
+      "states": [
+        {
+          "name": "yes",
+          "value": null
+        },
+        {
+          "name": "no",
+          "value": null
+        }
+      ],
+      "parents": [
+        "TbOrCa"
+      ],
+      "table": [
+        0.98,
+        0.02,
+        0.05,
+        0.95
+      ],
+      "experience": null,
+      "comment": ""
+    },
+    {
+      "name": "Dyspnea",
+      "title": "",
+      "kind": "Chance",
+      "states": [
+        {
+          "name": "yes",
+          "value": null
+        },
+        {
+          "name": "no",
+          "value": null
+        }
+      ],
+      "parents": [
+        "TbOrCa",
+        "Bronchitis"
+      ],
+      "table": [
+        0.9,
+        0.1,
+        0.7,
+        0.3,
+        0.8,
+        0.2,
+        0.1,
+        0.9
+      ],
+      "experience": null,
+      "comment": ""
+    }
+  ],
+  "visual": {
+    "VisitAsia": {
+      "x": 40.0,
+      "y": 40.0,
+      "display": "BeliefBars",
+      "color": null
+    },
+    "XRay": {
+      "x": 40.0,
+      "y": 520.0,
+      "display": "BeliefBars",
+      "color": null
+    },
+    "Smoking": {
+      "x": 480.0,
+      "y": 40.0,
+      "display": "BeliefBars",
+      "color": null
+    },
+    "LungCancer": {
+      "x": 300.0,
+      "y": 200.0,
+      "display": "BeliefBars",
+      "color": null
+    },
+    "Bronchitis": {
+      "x": 620.0,
+      "y": 200.0,
+      "display": "BeliefBars",
+      "color": null
+    },
+    "TbOrCa": {
+      "x": 170.0,
+      "y": 360.0,
+      "display": "BeliefBars",
+      "color": null
+    },
+    "Tuberculosis": {
+      "x": 40.0,
+      "y": 200.0,
+      "display": "BeliefBars",
+      "color": null
+    },
+    "Dyspnea": {
+      "x": 400.0,
+      "y": 520.0,
+      "display": "BeliefBars",
+      "color": null
+    }
+  }
+}

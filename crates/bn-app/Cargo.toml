@@ -1,0 +1,25 @@
+[package]
+name = "bn-app"
+version = "0.2.0"
+edition = "2024"
+license = "MIT"
+
+# dx names the bundle after the bin target (PascalCase), so this yields
+# Balina.app instead of BnApp.app.
+[[bin]]
+name = "balina"
+path = "src/main.rs"
+
+[dependencies]
+bn-core = { path = "../bn-core" }
+bn-session = { path = "../bn-session" }
+dirs = "6"
+dioxus = { version = "0.7", features = ["desktop"] }
+icons = { version = "0.18", features = ["dioxus"] }
+resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts"] }
+rfd = "0.15"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+slotmap = "1.1"
+
+[lints.clippy]
+await_holding_lock = "deny"

@@ -1,0 +1,13 @@
+[package]
+name = "bn-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+csv = "1.4.0"
+quick-xml = "0.41.0"
+rand = "0.10.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+slotmap = "1.1.1"
+thiserror = "2.0.20"

@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "description": "Tailwind CSS build only — the app itself is pure Rust (Dioxus). Regenerate assets/main.css with: npm run css",
+  "scripts": {
+    "css": "tailwindcss -i tailwind.css -o assets/main.css --minify",
+    "css:watch": "tailwindcss -i tailwind.css -o assets/main.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4",
+    "@tailwindcss/cli": "^4"
+  }
+}

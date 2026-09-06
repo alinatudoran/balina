@@ -1,0 +1,121 @@
+{
+  "format": "balina-net",
+  "version": 1,
+  "name": "Umbrella",
+  "comment": "",
+  "nodes": [
+    {
+      "name": "Weather",
+      "title": "",
+      "kind": "Chance",
+      "states": [
+        {
+          "name": "rain",
+          "value": null
+        },
+        {
+          "name": "sun",
+          "value": null
+        }
+      ],
+      "parents": [],
+      "table": [
+        0.3,
+        0.7
+      ],
+      "experience": null,
+      "comment": ""
+    },
+    {
+      "name": "Forecast",
+      "title": "",
+      "kind": "Chance",
+      "states": [
+        {
+          "name": "rainy",
+          "value": null
+        },
+        {
+          "name": "sunny",
+          "value": null
+        }
+      ],
+      "parents": [
+        "Weather"
+      ],
+      "table": [
+        0.8,
+        0.2,
+        0.15,
+        0.85
+      ],
+      "experience": null,
+      "comment": ""
+    },
+    {
+      "name": "Umbrella",
+      "title": "",
+      "kind": "Decision",
+      "states": [
+        {
+          "name": "take",
+          "value": null
+        },
+        {
+          "name": "leave",
+          "value": null
+        }
+      ],
+      "parents": [
+        "Forecast"
+      ],
+      "table": [],
+      "experience": null,
+      "comment": ""
+    },
+    {
+      "name": "Satisfaction",
+      "title": "",
+      "kind": "Utility",
+      "states": [],
+      "parents": [
+        "Weather",
+        "Umbrella"
+      ],
+      "table": [
+        70.0,
+        0.0,
+        75.0,
+        100.0
+      ],
+      "experience": null,
+      "comment": ""
+    }
+  ],
+  "visual": {
+    "Forecast": {
+      "x": 60.0,
+      "y": 260.0,
+      "display": "BeliefBars",
+      "color": null
+    },
+    "Weather": {
+      "x": 60.0,
+      "y": 60.0,
+      "display": "BeliefBars",
+      "color": null
+    },
+    "Satisfaction": {
+      "x": 360.0,
+      "y": 60.0,
+      "display": "BeliefBars",
+      "color": null
+    },
+    "Umbrella": {
+      "x": 360.0,
+      "y": 260.0,
+      "display": "BeliefBars",
+      "color": null
+    }
+  }
+}

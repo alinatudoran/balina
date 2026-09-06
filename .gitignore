@@ -1,0 +1,6 @@
+/target
+node_modules/
+.idea/
+.claude
+.DS_Store
+crates/bn-app/node_modules
