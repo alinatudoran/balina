@@ -1,6 +1,6 @@
-# BALINA (Bayesian And Logical Influence-diagram Network Application)
+# BALINA
 
-A high-performance Bayesian network and influence diagram editor, written entirely in Rust.
+Bayesian And Logical Influence-diagram Network Application
 
 ![screenshot](media/screenshot.png)
 
@@ -133,7 +133,7 @@ docs/              developer documentation (start with docs/ARCHITECTURE.md)
 
 ## Binaries
 
-A set of binaries for different platforms and architectures are available in the [releases](https://github.com/bnapp/bnapp/releases) page.
+A set of binaries for different platforms and architectures are available in the [releases](releases) page.
 
 > [!IMPORTANT]
 > macOS can claim that the downloaded app is dangerous because it was not signed by Apple. You can add the app to the list of trusted apps in the Security & Privacy settings or running the following command: 
