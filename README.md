@@ -1,5 +1,3 @@
-![type: desktop app](https://img.shields.io/badge/gui-dioxus%200.7-blue)
-
 # BALINA (Bayesian And Logical Influence-diagram Network Application)
 
 A high-performance Bayesian network and influence diagram editor, written entirely in Rust.
