@@ -1,8 +1,6 @@
-![type: desktop app](https://img.shields.io/badge/gui-dioxus%200.7-blue)
+# BALINA
 
-# BALINA (Bayesian And Logical Influence-diagram Network Application)
-
-A high-performance Bayesian network and influence diagram editor, written entirely in Rust.
+Bayesian And Logical Influence-diagram Network Application
 
 ![screenshot](media/screenshot.png)
 
@@ -38,6 +36,9 @@ A high-performance Bayesian network and influence diagram editor, written entire
 - Native Format: .balina (human-readable JSON format).
 - Standard Interchange Formats: Import and export support for XMLBIF v0.3 and GeNIe/SMILE .xdsl files (preserving layout coordinates).
 - Case Data: Import/export of .csv files for learning and simulation.
+
+
+
 
 ## Building
 
@@ -91,6 +92,9 @@ classes fail silently (the element renders unstyled).
 5. Open `examples/umbrella.balina`, then Tools → *Solve influence diagram*
    to see the optimal policy (take the umbrella iff the forecast is rainy).
 
+
+
+
 ## Testing
 
 ```sh
@@ -112,6 +116,7 @@ examples/          asia.balina, umbrella.balina, asia.xmlbif, umbrella.xdsl
 docs/              developer documentation (start with docs/ARCHITECTURE.md)
 ```
 
+
 ## Documentation
 
 | Doc | Contents |
@@ -123,6 +128,16 @@ docs/              developer documentation (start with docs/ARCHITECTURE.md)
 | [docs/TESTING.md](docs/TESTING.md) | test suites, oracles, coverage gaps |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | commands, dependency pins, gotchas, debugging tips |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | known limitations and planned work with implementation hints |
+
+
+
+## Binaries
+
+A set of binaries for different platforms and architectures are available in the [releases](releases) page.
+
+> [!IMPORTANT]
+> macOS can claim that the downloaded app is dangerous because it was not signed by Apple. You can add the app to the list of trusted apps in the Security & Privacy settings or running the following command: 
+> `xattr -cr /Applications/Balina.app`.
 
 
 ## Disclaimer

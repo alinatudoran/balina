@@ -130,6 +130,9 @@ pub fn AboutDialog() -> Element {
             on_close: move |_| close_dialog(),
             div { class: "space-y-1 text-sm",
                 p { "Balina — a Bayesian network / influence diagram editor." }
+                p { class: "text-muted-foreground text-xs",
+                    "Version {env!(\"CARGO_PKG_VERSION\")}"
+                }
             }
         }
     }
