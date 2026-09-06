@@ -20,8 +20,10 @@ jobs:
         with:
           workspaces: crates/bn-app -> ../../target
 
+      - uses: cargo-bins/cargo-binstall@v1
+
       - name: Install dioxus-cli
-        run: cargo install dioxus-cli --locked
+        run: cargo binstall dioxus-cli --no-confirm --locked
 
       - name: Bundle
         working-directory: crates/bn-app
@@ -32,7 +34,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ github.ref_name }}" \
-            target/dx/balina/bundle/dmg/*.dmg \
+            target/dx/balina/bundle/macos/macos/*.dmg \
             --clobber
 
   build-linux-amd64:
@@ -56,8 +58,10 @@ jobs:
         with:
           workspaces: crates/bn-app -> ../../target
 
+      - uses: cargo-bins/cargo-binstall@v1
+
       - name: Install dioxus-cli
-        run: cargo install dioxus-cli --locked
+        run: cargo binstall dioxus-cli --no-confirm --locked
 
       - name: Bundle
         working-directory: crates/bn-app
@@ -68,7 +72,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ github.ref_name }}" \
-            target/dx/balina/bundle/deb/*.deb \
+            target/dx/balina/bundle/linux/appimage/*.AppImage \
             --clobber
 
   build-linux-aarch64:
@@ -92,8 +96,10 @@ jobs:
         with:
           workspaces: crates/bn-app -> ../../target
 
+      - uses: cargo-bins/cargo-binstall@v1
+
       - name: Install dioxus-cli
-        run: cargo install dioxus-cli --locked
+        run: cargo binstall dioxus-cli --no-confirm --locked
 
       - name: Bundle
         working-directory: crates/bn-app
@@ -104,7 +110,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ github.ref_name }}" \
-            target/dx/balina/bundle/deb/*.deb \
+            target/dx/balina/bundle/linux/appimage/*.AppImage \
             --clobber
 
   build-windows-amd64:
@@ -119,8 +125,10 @@ jobs:
         with:
           workspaces: crates/bn-app -> ../../target
 
+      - uses: cargo-bins/cargo-binstall@v1
+
       - name: Install dioxus-cli
-        run: cargo install dioxus-cli --locked
+        run: cargo binstall dioxus-cli --no-confirm --locked
 
       - name: Bundle
         working-directory: crates/bn-app
@@ -132,5 +140,5 @@ jobs:
         shell: bash
         run: |
           gh release upload "${{ github.ref_name }}" \
-            target/dx/balina/bundle/msi/*.msi \
+            target/dx/balina/bundle/windows/nsis/*.exe \
             --clobber
