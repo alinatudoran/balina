@@ -37,6 +37,9 @@ A high-performance Bayesian network and influence diagram editor, written entire
 - Standard Interchange Formats: Import and export support for XMLBIF v0.3 and GeNIe/SMILE .xdsl files (preserving layout coordinates).
 - Case Data: Import/export of .csv files for learning and simulation.
 
+
+
+
 ## Building
 
 **Prerequisites:** Rust (edition 2024, tested on rustc 1.95+). Node is only
@@ -89,6 +92,9 @@ classes fail silently (the element renders unstyled).
 5. Open `examples/umbrella.balina`, then Tools → *Solve influence diagram*
    to see the optimal policy (take the umbrella iff the forecast is rainy).
 
+
+
+
 ## Testing
 
 ```sh
@@ -130,7 +136,8 @@ docs/              developer documentation (start with docs/ARCHITECTURE.md)
 A set of binaries for different platforms and architectures are available in the [releases](https://github.com/bnapp/bnapp/releases) page.
 
 > [!IMPORTANT]
-> macOS can claim that the downloaded app is dangerous because it was not signed by Apple. You can add the app to the list of trusted apps in the Security & Privacy settings or running the command `xattr -cr /Applications/Balina.app`.
+> macOS can claim that the downloaded app is dangerous because it was not signed by Apple. You can add the app to the list of trusted apps in the Security & Privacy settings or running the following command: 
+> `xattr -cr /Applications/Balina.app`.
 
 
 ## Disclaimer
