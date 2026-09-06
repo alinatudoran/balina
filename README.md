@@ -110,6 +110,7 @@ examples/          asia.balina, umbrella.balina, asia.xmlbif, umbrella.xdsl
 docs/              developer documentation (start with docs/ARCHITECTURE.md)
 ```
 
+
 ## Documentation
 
 | Doc | Contents |
@@ -121,6 +122,15 @@ docs/              developer documentation (start with docs/ARCHITECTURE.md)
 | [docs/TESTING.md](docs/TESTING.md) | test suites, oracles, coverage gaps |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | commands, dependency pins, gotchas, debugging tips |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | known limitations and planned work with implementation hints |
+
+
+
+## Binaries
+
+A set of binaries for different platforms and architectures are available in the [releases](https://github.com/bnapp/bnapp/releases) page.
+
+> [!IMPORTANT]
+> macOS can claim that the downloaded app is dangerous because it was not signed by Apple. You can add the app to the list of trusted apps in the Security & Privacy settings or running the command `xattr -cr /Applications/Balina.app`.
 
 
 ## Disclaimer
