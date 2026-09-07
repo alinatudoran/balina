@@ -256,13 +256,10 @@ fn structure_job_prepare_run_apply() {
     let mut s = Session::new();
     ops::file::doc_open(&mut s, examples_dir().join("asia.balina")).unwrap();
 
-    // Simulate a small case file to learn from.
-    let tmp = std::env::temp_dir().join("balina_session_test_cases.csv");
-    let msg = ops::learn::simulate_cases_to_file(&s.doc.net, tmp.clone(), 2_000, 0.0).unwrap();
-    assert!(msg.contains("2000 cases"));
+    // Simulate a small case set to learn from.
+    let cases = ops::learn::simulate_cases_csv(&s.doc.net, 2_000, 0.0).unwrap().into_bytes();
 
     let opts = StructureLearnOpts {
-        path: tmp.clone(),
         algo: StructAlgo::HillClimb,
         score: ScoreChoice::Bic,
         ess: 1.0,
@@ -279,7 +276,7 @@ fn structure_job_prepare_run_apply() {
     assert!(matches!(prepare_structure_job(&mut s, opts.clone()), Err(CmdError::Busy(_))));
     let started_seq = input.started_seq;
     let jc = JobCtx::new(Arc::new(AtomicBool::new(false)), |_| {});
-    let outcome = run_structure_job(input, &jc);
+    let outcome = run_structure_job(input, &cases, None, &jc);
     let result = apply_structure_outcome(&mut s, outcome, started_seq).unwrap();
     assert!(s.job_cancel.is_none(), "busy slot cleared");
     assert!(s.bridge.compiled && !s.bridge.conflict);
@@ -287,13 +284,105 @@ fn structure_job_prepare_run_apply() {
     // Staleness: edit mid-job → result discarded.
     let input = prepare_structure_job(&mut s, opts).unwrap();
     let started_seq = input.started_seq;
-    let outcome = run_structure_job(input, &jc);
+    let outcome = run_structure_job(input, &cases, None, &jc);
     s.doc.begin_change(); // concurrent edit
     assert!(matches!(
         apply_structure_outcome(&mut s, outcome, started_seq),
         Err(CmdError::Stale(_))
     ));
-    let _ = std::fs::remove_file(tmp);
+}
+
+/// The by-name StructurePatch path (web worker) must produce exactly the same
+/// network as the clone-swap path (desktop).
+#[test]
+fn structure_patch_equivalent_to_outcome_swap() {
+    use crate::jobs::JobCtx;
+    use crate::ops::learn::{
+        apply_structure_outcome, prepare_structure_job, run_structure_job, LearnMethod,
+        ScoreChoice, StructAlgo, StructureLearnOpts, StructureOutcome,
+    };
+    use crate::patch::{apply_structure_patch, structure_patch};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
+    let mut s_swap = Session::new();
+    ops::file::doc_open(&mut s_swap, examples_dir().join("asia.balina")).unwrap();
+    let mut s_patch = Session::new();
+    ops::file::doc_open(&mut s_patch, examples_dir().join("asia.balina")).unwrap();
+
+    let cases = ops::learn::simulate_cases_csv(&s_swap.doc.net, 2_000, 0.0).unwrap().into_bytes();
+    let opts = StructureLearnOpts {
+        algo: StructAlgo::HillClimb,
+        score: ScoreChoice::Bic,
+        ess: 1.0,
+        max_parents: 4,
+        alpha: 0.05,
+        class_node: None,
+        param_method: LearnMethod::Counting,
+        em_iters: 50,
+        required_edges: vec![],
+        forbidden_edges: vec![],
+    };
+    let jc = JobCtx::new(Arc::new(AtomicBool::new(false)), |_| {});
+
+    // One job result, applied both ways.
+    let input = prepare_structure_job(&mut s_swap, opts).unwrap();
+    let started_seq = input.started_seq;
+    let before = input.net.clone();
+    let outcome = run_structure_job(input, &cases, None, &jc);
+    let StructureOutcome::Done { net: learned, report, summary, warnings } = outcome else {
+        panic!("job did not finish");
+    };
+    let patch = structure_patch(&before, &learned);
+    assert!(!patch.nodes.is_empty(), "learning should change something");
+    // Round-trip the patch through JSON like the worker protocol does.
+    let patch: crate::patch::StructurePatch =
+        serde_json::from_str(&serde_json::to_string(&patch).unwrap()).unwrap();
+
+    s_patch.job_cancel = Some(Arc::new(AtomicBool::new(false))); // as if a job ran
+    let patch_seq = s_patch.doc.change_seq;
+    apply_structure_patch(
+        &mut s_patch,
+        &patch,
+        report.clone(),
+        summary.clone(),
+        warnings.clone(),
+        patch_seq,
+    )
+    .unwrap();
+    assert!(s_patch.job_cancel.is_none());
+    apply_structure_outcome(
+        &mut s_swap,
+        StructureOutcome::Done { net: learned, report, summary, warnings },
+        started_seq,
+    )
+    .unwrap();
+
+    // Same edges (by name) and same tables/experience per node.
+    let name_edges = |net: &bn_core::model::Network| {
+        let mut e: Vec<(String, String)> = net
+            .edges()
+            .into_iter()
+            .map(|(p, c)| (net.node(p).name.clone(), net.node(c).name.clone()))
+            .collect();
+        e.sort();
+        e
+    };
+    assert_eq!(name_edges(&s_swap.doc.net), name_edges(&s_patch.doc.net));
+    for (_, n_swap) in s_swap.doc.net.nodes() {
+        let id = s_patch.doc.net.find_by_name(&n_swap.name).unwrap();
+        let n_patch = s_patch.doc.net.node(id);
+        let parents_swap: Vec<&str> =
+            n_swap.parents.iter().map(|&p| s_swap.doc.net.node(p).name.as_str()).collect();
+        let parents_patch: Vec<&str> =
+            n_patch.parents.iter().map(|&p| s_patch.doc.net.node(p).name.as_str()).collect();
+        assert_eq!(parents_swap, parents_patch, "parent order for {}", n_swap.name);
+        assert_eq!(n_swap.table.data.len(), n_patch.table.data.len(), "table {}", n_swap.name);
+        for (a, b) in n_swap.table.data.iter().zip(&n_patch.table.data) {
+            assert!((a - b).abs() < 1e-12, "table values for {}", n_swap.name);
+        }
+        assert_eq!(n_swap.experience, n_patch.experience, "experience for {}", n_swap.name);
+    }
 }
 
 #[test]

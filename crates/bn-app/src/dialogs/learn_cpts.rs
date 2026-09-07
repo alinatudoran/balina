@@ -1,35 +1,20 @@
 //! Learn CPTs from a case file (counting or EM). Synchronous — fast at
 //! editor scale.
 
-use std::path::PathBuf;
-
 use bn_session::ops::learn::{LearnCptsOpts, LearnMethod};
 use dioxus::prelude::*;
 
-use crate::state::{close_dialog, exec_res, log_message, LAST_CASE_DIR};
+use crate::platform::{pick_case_file, CaseFile};
+use crate::state::{close_dialog, exec_res, log_message, LAST_CASE_FILE};
 use crate::ui::{Modal, NumberInput, BTN, BTN_PRIMARY, BTN_SM};
 
-pub async fn pick_case_file() -> Option<PathBuf> {
-    let mut d = rfd::AsyncFileDialog::new().add_filter("Case files", &["csv", "tsv"]);
-    if let Some(last) = LAST_CASE_DIR.peek().as_ref().and_then(|p| p.parent()) {
-        d = d.set_directory(last);
-    }
-    let fh = d.pick_file().await?;
-    let p = fh.path().to_path_buf();
-    *LAST_CASE_DIR.write() = Some(p.clone());
-    Some(p)
-}
-
-pub fn file_label(p: &Option<PathBuf>) -> String {
-    p.as_ref()
-        .and_then(|p| p.file_name())
-        .map(|f| f.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "no file selected".into())
+pub fn file_label(f: &Option<CaseFile>) -> String {
+    f.as_ref().map(|f| f.label()).unwrap_or_else(|| "no file selected".into())
 }
 
 #[component]
 pub fn LearnCptsDialog() -> Element {
-    let mut path: Signal<Option<PathBuf>> = use_signal(|| LAST_CASE_DIR.peek().clone());
+    let mut file: Signal<Option<CaseFile>> = use_signal(|| LAST_CASE_FILE.peek().clone());
     let mut method = use_signal(|| LearnMethod::Counting);
     let mut em_iters = use_signal(|| 50usize);
     let mut create_nodes = use_signal(|| true);
@@ -37,21 +22,31 @@ pub fn LearnCptsDialog() -> Element {
     let mut report: Signal<Option<String>> = use_signal(|| None);
 
     let run = move |_| {
-        let Some(p) = path.read().clone() else { return };
+        let Some(f) = file.read().clone() else { return };
         let opts = LearnCptsOpts {
             method: *method.read(),
             em_iters: *em_iters.read(),
             create_nodes: *create_nodes.read(),
             bins: *bins.read(),
         };
-        match exec_res(|s| bn_session::ops::learn::learn_cpts(s, p, opts)) {
-            Ok(res) => {
-                log_message(res.summary);
-                report.set(Some(res.report));
-                *crate::canvas::controller::FIT_REQUEST.write() += 1;
+        spawn(async move {
+            let bytes = match f.read().await {
+                Ok(b) => b,
+                Err(e) => {
+                    report.set(Some(format!("Learning failed: {e}")));
+                    return;
+                }
+            };
+            let delim = f.forced_delim();
+            match exec_res(|s| bn_session::ops::learn::learn_cpts(s, &bytes, delim, opts)) {
+                Ok(res) => {
+                    log_message(res.summary);
+                    report.set(Some(res.report));
+                    *crate::canvas::controller::FIT_REQUEST.write() += 1;
+                }
+                Err(e) => report.set(Some(format!("Learning failed: {e}"))),
             }
-            Err(e) => report.set(Some(format!("Learning failed: {e}"))),
-        }
+        });
     };
 
     rsx! {
@@ -63,7 +58,7 @@ pub fn LearnCptsDialog() -> Element {
                 button { class: BTN, onclick: move |_| close_dialog(), "Close" }
                 button {
                     class: BTN_PRIMARY,
-                    disabled: path.read().is_none(),
+                    disabled: file.read().is_none(),
                     onclick: run,
                     "Learn"
                 }
@@ -74,15 +69,15 @@ pub fn LearnCptsDialog() -> Element {
                         class: BTN_SM,
                         onclick: move |_| {
                             spawn(async move {
-                                if let Some(p) = pick_case_file().await {
-                                    path.set(Some(p));
+                                if let Some(f) = pick_case_file().await {
+                                    file.set(Some(f));
                                 }
                             });
                         },
                         "Choose CSV/TSV…"
                     }
                     span { class: "truncate font-mono text-xs text-muted-foreground",
-                        "{file_label(&path.read())}"
+                        "{file_label(&file.read())}"
                     }
                 }
                 div { class: "flex items-center gap-1.5",

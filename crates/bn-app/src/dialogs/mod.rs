@@ -7,6 +7,8 @@ pub mod host;
 pub mod learn_cpts;
 pub mod misc;
 pub mod node_props;
+#[cfg(target_arch = "wasm32")]
+pub mod save_web;
 pub mod sensitivity;
 pub mod simulate;
 pub mod structure_learn;

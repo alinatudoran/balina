@@ -4,13 +4,32 @@
 
 ```sh
 cargo test --workspace                          # engine + session + UI-logic suites
-cargo run -p bn-app -- examples/asia.balina     # run the editor
-cargo build --release -p bn-app                 # release build
+cargo run -p bn-app -- examples/asia.balina     # run the editor (desktop)
+cargo build --release -p bn-app                 # release build (desktop)
 npm --prefix crates/bn-app run css                        # rebuild crates/bn-app/assets/main.css (Tailwind v4)
 npm --prefix crates/bn-app run css:watch                  # ... in watch mode while styling
 cargo run -p bn-core --example make_examples    # regenerate examples/ (repo root)
 cargo clippy --workspace
+
+# Web (wasm) build — one-time setup:
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.128 --locked  # MUST match locked wasm-bindgen
+# then, and again after touching learn-related bn-core/bn-session code:
+sh scripts/build-worker.sh                      # builds the learning Web Worker (embedded by bn-app)
+cd crates/bn-app && dx serve --web --no-default-features --features web
+# type-check the wasm target without dx:
+cargo check -p bn-app --no-default-features --features web --target wasm32-unknown-unknown
+cargo check -p bn-worker --target wasm32-unknown-unknown
 ```
+
+**Web worker gotcha**: `crates/bn-app/assets/worker/bn_worker.js` and
+`bn_worker_bg.wasm` are gitignored outputs of `scripts/build-worker.sh`,
+`include_bytes!`-embedded into the web app (dx only serves
+manganis-referenced assets, and embedding keeps app+worker in lockstep —
+cargo rebuilds the app when the artifacts change). `bn-app/build.rs` writes
+empty placeholders so the crate compiles before the script has run; starting
+a learning job then fails with a clear "run scripts/build-worker.sh"
+message. Bump `bn_worker::proto::PROTO_VERSION` on any wire change.
 
 First-time setup: `npm --prefix crates/bn-app install` (Tailwind CLI only — the app
 itself is pure Rust; node is NOT needed to build or run, because the built

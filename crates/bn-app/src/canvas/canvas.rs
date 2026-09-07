@@ -61,7 +61,7 @@ pub fn NetworkCanvas() -> Element {
                     return;
                 }
                 last = Some(size);
-                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                crate::platform::sleep_ms(30).await;
             }
         });
     });

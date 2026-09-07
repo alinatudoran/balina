@@ -54,7 +54,7 @@ impl EngineBridge {
 
     /// Synchronous recompute according to accumulated dirt.
     pub fn recompute(&mut self, doc: &Document) {
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         if self.engine.is_none() || self.dirt >= Dirt::Params {
             // Recompile covers both structure and CPT changes (compilation is
             // sub-millisecond at editor scale, not worth splitting).

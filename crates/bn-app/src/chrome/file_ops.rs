@@ -29,18 +29,15 @@ fn with_filters(mut d: rfd::AsyncFileDialog, filters: &[(&str, &[&str])]) -> rfd
 }
 
 /// True to proceed (document unmodified, or the user confirmed discarding).
-async fn confirm_discard(action: &str) -> bool {
+pub(crate) async fn confirm_discard(action: &str) -> bool {
     if !SESSION.read().doc.modified {
         return true;
     }
-    let choice = rfd::AsyncMessageDialog::new()
-        .set_level(rfd::MessageLevel::Warning)
-        .set_title("Unsaved changes")
-        .set_description(format!("The network has unsaved changes. {action} anyway?"))
-        .set_buttons(rfd::MessageButtons::OkCancel)
-        .show()
-        .await;
-    matches!(choice, rfd::MessageDialogResult::Ok)
+    crate::platform::confirm(
+        "Unsaved changes",
+        &format!("The network has unsaved changes. {action} anyway?"),
+    )
+    .await
 }
 
 pub fn file_new() {

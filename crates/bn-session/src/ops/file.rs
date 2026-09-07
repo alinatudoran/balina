@@ -23,6 +23,23 @@ pub fn doc_open(s: &mut Session, path: PathBuf) -> Result<(), CmdError> {
     Ok(())
 }
 
+/// Open from already-loaded text (web builds — there is no path to keep).
+pub fn doc_open_str(s: &mut Session, text: &str, fmt: io::Format) -> Result<(), CmdError> {
+    let iodoc = io::load_str(text, fmt)?;
+    s.doc = Document::from_io_document(iodoc, None);
+    s.bridge.invalidate();
+    s.finish(Dirt::Structure);
+    Ok(())
+}
+
+/// Serialize for a platform-side save (web builds: the caller downloads the
+/// text). Clears `modified` like a successful save; `doc.path` is untouched.
+pub fn doc_save_str(s: &mut Session, fmt: io::Format) -> Result<(String, Vec<String>), CmdError> {
+    let (text, warnings) = io::save_str(&s.doc.to_io_document(), fmt)?;
+    s.doc.modified = false;
+    Ok((text, warnings.into_iter().map(|io::Warning::Lossy(m)| m).collect()))
+}
+
 /// `path: None` saves to the document's current path (error if it has none —
 /// the UI runs a save dialog first in that case).
 pub fn doc_save(s: &mut Session, path: Option<PathBuf>) -> Result<SaveResult, CmdError> {

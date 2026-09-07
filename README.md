@@ -72,6 +72,23 @@ dx bundle --release                    # run from crates/bn-app/
 # output: target/dx/balina/bundle/
 ```
 
+### Web (WebAssembly) build
+
+The same app also compiles for the browser. Long-running structure learning
+executes in a Web Worker; open/save become a file picker and downloads.
+
+```sh
+rustup target add wasm32-unknown-unknown                    # one-time
+cargo install wasm-bindgen-cli --version 0.2.128 --locked   # one-time (version must match Cargo.lock)
+sh scripts/build-worker.sh                                  # build the learning worker
+cd crates/bn-app && dx serve --web --no-default-features --features web
+```
+
+For production, `dx build --release --web --no-default-features --features web`
+produces a static site under `target/dx/balina/release/web/public/` that any
+static file host can serve (the worker is embedded in the app wasm — no extra
+files to deploy).
+
 ### Rebuild CSS (after changing Tailwind classes)
 
 ```sh
@@ -110,8 +127,11 @@ crates/bn-core     engine library (model, factor algebra, inference, decisions,
                    learning, sampling, sensitivity, io) — zero GUI dependencies
 crates/bn-session  application session: document + undo + engine bridge +
                    op bodies — no GUI dependency
-crates/bn-app      Dioxus 0.7 desktop app: canvas, chrome, dialogs —
-                   pure Rust, renders in the system webview
+crates/bn-app      Dioxus 0.7 app: canvas, chrome, dialogs — pure Rust;
+                   compiles as a desktop app (system webview, default) and
+                   as a browser app (wasm32, --features web)
+crates/bn-worker   web-only: structure learning as a wasm module run in a
+                   Web Worker (built by scripts/build-worker.sh)
 examples/          asia.balina, umbrella.balina, asia.xmlbif, umbrella.xdsl
 docs/              developer documentation (start with docs/ARCHITECTURE.md)
 ```
