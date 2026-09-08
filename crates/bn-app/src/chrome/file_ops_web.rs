@@ -45,7 +45,7 @@ pub fn file_open() {
         if !confirm_discard("Discard them and open another file").await {
             return;
         }
-        let mut d = rfd::AsyncFileDialog::new();
+        let mut d = rfd::AsyncFileDialog::new().set_title("Open network");
         for (name, exts) in OPEN_FILTERS {
             d = d.add_filter(*name, exts);
         }

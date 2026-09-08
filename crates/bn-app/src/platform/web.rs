@@ -36,6 +36,7 @@ impl CaseFile {
 /// Pick a CSV/TSV case file (browser file input).
 pub async fn pick_case_file() -> Option<CaseFile> {
     let fh = rfd::AsyncFileDialog::new()
+        .set_title("Choose case file")
         .add_filter("Case files", &["csv", "tsv"])
         .pick_file()
         .await?;
