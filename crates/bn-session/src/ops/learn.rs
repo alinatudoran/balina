@@ -10,13 +10,14 @@
 //!    one `begin_change`, clone-swap the net (NodeIds survive, so visuals
 //!    and evidence stay attached).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use bn_core::learn::{self, CountingOptions, EmOptions, ImportOptions};
 use bn_core::model::{Network, NodeId};
 use bn_core::EdgeConstraints;
+use serde::{Deserialize, Serialize};
 
 use crate::doc::Dirt;
 use crate::error::CmdError;
@@ -24,15 +25,17 @@ use crate::jobs::{JobCtx, JobEvent};
 use crate::session::Session;
 use crate::views::{check_node, LearnCptsResult, StructureLearnResult};
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum LearnMethod {
     Counting,
     Em,
 }
 
-// .tsv is always tab-delimited; anything else infers from the header.
-fn delim_for(path: &Path) -> Option<u8> {
-    path.extension()
+/// Delimiter forced by the case file's name: `.tsv` is always tab-delimited;
+/// anything else infers from the header.
+pub fn delim_for_name(name: &str) -> Option<u8> {
+    std::path::Path::new(name)
+        .extension()
         .and_then(|e| e.to_str())
         .filter(|e| e.eq_ignore_ascii_case("tsv"))
         .map(|_| b'\t')
@@ -52,11 +55,12 @@ pub struct LearnCptsOpts {
 
 pub fn learn_cpts(
     s: &mut Session,
-    path: PathBuf,
+    cases: &[u8],
+    forced_delim: Option<u8>,
     opts: LearnCptsOpts,
 ) -> Result<LearnCptsResult, CmdError> {
-    let file = std::fs::File::open(&path)?;
-    let delim = delim_for(&path);
+    let file = cases;
+    let delim = forced_delim;
     // One undo step for node creation + learning together.
     s.doc.begin_change();
     let mut created_lines: Vec<String> = vec![];
@@ -142,7 +146,7 @@ pub fn learn_cpts(
 // Structure learning (background job)
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum StructAlgo {
     HillClimb,
     GrowShrink,
@@ -170,7 +174,7 @@ impl StructAlgo {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum ScoreChoice {
     Bic,
     Bdeu,
@@ -178,7 +182,6 @@ pub enum ScoreChoice {
 
 #[derive(Clone, Debug)]
 pub struct StructureLearnOpts {
-    pub path: PathBuf,
     pub algo: StructAlgo,
     pub score: ScoreChoice,
     pub ess: f64,
@@ -274,18 +277,19 @@ pub fn apply_structure_outcome(
 }
 
 /// The worker body: owns a network clone, never touches the session.
-pub fn run_structure_job(input: StructureJobInput, jc: &JobCtx) -> StructureOutcome {
+/// `case_data` is the raw case file (callers do the platform I/O).
+pub fn run_structure_job(
+    input: StructureJobInput,
+    case_data: &[u8],
+    forced_delim: Option<u8>,
+    jc: &JobCtx,
+) -> StructureOutcome {
     use bn_core::learn::structure as st;
     use bn_core::LearnError;
 
     let StructureJobInput { mut net, opts, class, .. } = input;
-    let path = opts.path.clone();
-    let file = match std::fs::File::open(&path) {
-        Ok(f) => f,
-        Err(e) => return StructureOutcome::Failed(format!("cannot open file: {e}")),
-    };
     jc.report(JobEvent { frac: None, text: "reading cases…".into() });
-    let cases = match learn::read_cases_with(&net, file, delim_for(&path)) {
+    let cases = match learn::read_cases_with(&net, case_data, forced_delim) {
         Ok(c) => c,
         Err(e) => return StructureOutcome::Failed(format!("cannot read cases: {e}")),
     };
@@ -570,16 +574,24 @@ pub fn run_structure_job(input: StructureJobInput, jc: &JobCtx) -> StructureOutc
 // Case simulation
 // ---------------------------------------------------------------------------
 
-/// Takes a network clone so the UI can run it off the session.
+/// Takes a network clone so the UI can run it off the session. Returns the
+/// simulated cases as CSV text (platform-agnostic; callers do the I/O).
+pub fn simulate_cases_csv(net: &Network, n: usize, missing_pct: f64) -> Result<String, CmdError> {
+    let mut rng = rand::rng();
+    let cases = bn_core::sample::generate_cases(net, n, missing_pct / 100.0, &mut rng);
+    let mut buf: Vec<u8> = Vec::new();
+    learn::write_cases(net, &cases, &mut buf).map_err(|e| CmdError::Io(e.to_string()))?;
+    String::from_utf8(buf).map_err(|e| CmdError::Io(e.to_string()))
+}
+
+/// Desktop wrapper: simulate and write straight to `path`.
 pub fn simulate_cases_to_file(
     net: &Network,
     path: PathBuf,
     n: usize,
     missing_pct: f64,
 ) -> Result<String, CmdError> {
-    let mut rng = rand::rng();
-    let cases = bn_core::sample::generate_cases(net, n, missing_pct / 100.0, &mut rng);
-    let file = std::fs::File::create(&path)?;
-    learn::write_cases(net, &cases, file).map_err(|e| CmdError::Io(e.to_string()))?;
+    let csv = simulate_cases_csv(net, n, missing_pct)?;
+    std::fs::write(&path, csv)?;
     Ok(format!("Wrote {} cases to {}", n, path.display()))
 }

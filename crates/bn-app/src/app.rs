@@ -1,7 +1,6 @@
 //! Root component: layout, menu-event routing, window-title sync, initial
 //! file open, palette ghost-drag handling.
 
-use dioxus::desktop::use_muda_event_handler;
 use dioxus::prelude::*;
 
 use crate::canvas::canvas::default_node_footprint;
@@ -9,7 +8,7 @@ use crate::canvas::context_menu::ContextMenuHost;
 use crate::canvas::controller::{Gesture, GESTURE, VIEWPORT};
 use crate::canvas::node::kind_header_color;
 use crate::chrome::toolbar::{add_at_center, Toolbar};
-use crate::chrome::{menu, message_log::MessageLog, status_bar::StatusBar};
+use crate::chrome::{message_log::MessageLog, status_bar::StatusBar};
 use crate::state::{exec, SESSION};
 
 /// Finish a palette drag at `c` (client coords): a barely-moved click adds
@@ -43,21 +42,23 @@ fn finish_palette_drag(kind: bn_core::model::NodeKind, start: (f64, f64), c: (f6
 
 #[component]
 pub fn App() -> Element {
-    // Initial mount: open the CLI file or make sure beliefs exist.
+    // Initial mount: open the CLI file (desktop) or make sure beliefs exist.
     use_hook(|| {
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(path) = crate::INITIAL_FILE.get() {
             crate::chrome::file_ops::open_path(path.clone());
-        } else {
-            exec(|s| {
-                bn_session::ops::file::refresh(s);
-                Ok(())
-            });
+            return;
         }
+        exec(|s| {
+            bn_session::ops::file::refresh(s);
+            Ok(())
+        });
     });
 
     // Native menu events → route by id.
-    use_muda_event_handler(move |ev| {
-        menu::route(ev.id().as_ref());
+    #[cfg(not(target_arch = "wasm32"))]
+    dioxus::desktop::use_muda_event_handler(move |ev| {
+        crate::chrome::menu::route(ev.id().as_ref());
     });
 
     // Window title tracks name + modified star.
@@ -66,7 +67,7 @@ pub fn App() -> Element {
         let title =
             format!("Balina — {}{}", s.doc.net.name, if s.doc.modified { " *" } else { "" });
         drop(s);
-        dioxus::desktop::window().set_title(&title);
+        crate::platform::set_window_title(&title);
     });
 
     let palette_ghost = match &*GESTURE.read() {
@@ -107,6 +108,7 @@ pub fn App() -> Element {
                     finish_palette_drag(kind, start_client, (c.x, c.y));
                 }
             },
+            crate::chrome::menu_bar::MenuBar {}
             Toolbar {}
             if conflict {
                 div {

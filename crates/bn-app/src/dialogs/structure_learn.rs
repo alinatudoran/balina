@@ -2,23 +2,21 @@
 //! cancel. Editing the network while a job runs discards its result (the
 //! session enforces this via change_seq).
 //!
-//! Async pattern: prepare (scoped SESSION write) → `spawn_blocking` (no
-//! signal borrow held across any `.await`) → apply (scoped write again,
-//! staleness-checked). Progress flows through a channel into JOB_PROGRESS —
-//! signals are only ever written on the UI scheduler, never from the
-//! blocking thread.
-
-use std::path::PathBuf;
+//! Async pattern: prepare (scoped SESSION write) → `platform::run_structure_job`
+//! (desktop: `spawn_blocking`; web: a Web Worker — no signal borrow held
+//! across any `.await`) → apply (scoped write again, staleness-checked).
+//! Progress flows into JOB_PROGRESS on the UI scheduler only.
 
 use bn_core::model::{NodeId, NodeKind};
-use bn_session::jobs::{JobCtx, JobEvent};
+use bn_session::jobs::JobEvent;
 use bn_session::ops::learn::{LearnMethod, ScoreChoice, StructAlgo, StructureLearnOpts};
 use bn_session::CmdError;
 use dioxus::prelude::*;
 
-use crate::dialogs::learn_cpts::{file_label, pick_case_file};
+use crate::dialogs::learn_cpts::file_label;
+use crate::platform::{pick_case_file, CaseFile};
 use crate::state::{
-    close_dialog, exec, exec_res, log_message, JOB_PROGRESS, LAST_CASE_DIR, SESSION,
+    close_dialog, exec, exec_res, log_message, JOB_PROGRESS, LAST_CASE_FILE, SESSION,
 };
 use crate::ui::{Modal, NumberInput, BTN, BTN_PRIMARY, BTN_SM, SELECT};
 
@@ -42,7 +40,7 @@ const ALGOS: [AlgoCfg; 7] = [
 
 #[component]
 pub fn StructureLearnDialog() -> Element {
-    let mut path: Signal<Option<PathBuf>> = use_signal(|| LAST_CASE_DIR.peek().clone());
+    let mut file: Signal<Option<CaseFile>> = use_signal(|| LAST_CASE_FILE.peek().clone());
     let mut algo = use_signal(|| StructAlgo::HillClimb);
     let mut score = use_signal(|| ScoreChoice::Bic);
     let mut ess = use_signal(|| 1.0f64);
@@ -74,16 +72,15 @@ pub fn StructureLearnDialog() -> Element {
     // The class node may vanish via undo.
     let class_valid =
         class_node.read().is_some_and(|c| chance_nodes.iter().any(|(id, _)| *id == c));
-    let can_run = path.read().is_some()
+    let can_run = file.read().is_some()
         && chance_nodes.len() >= 2
         && (!cfg.class || class_valid)
         && !*running.read();
 
     let needs_class = cfg.class;
     let run = move |_| {
-        let Some(p) = path.read().clone() else { return };
+        let Some(case_file) = file.read().clone() else { return };
         let opts = StructureLearnOpts {
-            path: p,
             algo: *algo.read(),
             score: *score.read(),
             ess: *ess.read(),
@@ -110,24 +107,10 @@ pub fn StructureLearnDialog() -> Element {
                     }
                 };
             let started_seq = input.started_seq;
-            let cancel = input.cancel.clone();
-            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<JobEvent>();
-            let jc = JobCtx::new(cancel, move |e| {
-                let _ = tx.send(e);
-            });
-            let handle = tokio::task::spawn_blocking(move || {
-                bn_session::ops::learn::run_structure_job(input, &jc)
-            });
-            // Drain progress on the UI scheduler.
-            spawn(async move {
-                while let Some(e) = rx.recv().await {
-                    *JOB_PROGRESS.write() = Some(e);
-                }
-            });
-            match handle.await {
+            match crate::platform::run_structure_job(input, case_file).await {
                 Ok(outcome) => {
                     match exec_res(|s| {
-                        bn_session::ops::learn::apply_structure_outcome(s, outcome, started_seq)
+                        crate::platform::apply_structure_outcome(s, outcome, started_seq)
                     }) {
                         Ok(res) => {
                             for w in &res.warnings {
@@ -189,15 +172,15 @@ pub fn StructureLearnDialog() -> Element {
                         disabled: *running.read(),
                         onclick: move |_| {
                             spawn(async move {
-                                if let Some(p) = pick_case_file().await {
-                                    path.set(Some(p));
+                                if let Some(f) = pick_case_file().await {
+                                    file.set(Some(f));
                                 }
                             });
                         },
                         "Choose CSV/TSV…"
                     }
                     span { class: "truncate font-mono text-xs text-muted-foreground",
-                        "{file_label(&path.read())}"
+                        "{file_label(&file.read())}"
                     }
                 }
                 div { class: "flex items-center gap-2",

@@ -29,6 +29,37 @@ pub fn handle_keydown(ev: KeyboardEvent) {
         return;
     }
 
+    // Web: no native menu accelerators, so the frontend owns Cmd+N/O/S,
+    // Cmd+Shift+S and F5 too. Deliberately BEFORE the TYPING guard — on
+    // desktop these fire even while typing (they're menu accelerators there).
+    // Browsers may refuse to yield some of them (notably Cmd+N); the in-app
+    // menu bar is the reliable path.
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mods = data.modifiers();
+        let cmd = mods.contains(Modifiers::META) || mods.contains(Modifiers::CONTROL);
+        let shift = mods.contains(Modifiers::SHIFT);
+        if key == Key::F5 {
+            ev.prevent_default();
+            crate::chrome::menu::route("network.compile");
+            return;
+        }
+        if cmd && let Key::Character(ref k) = key {
+            let id = match (k.to_ascii_lowercase().as_str(), shift) {
+                ("n", false) => Some("file.new"),
+                ("o", false) => Some("file.open"),
+                ("s", false) => Some("file.save"),
+                ("s", true) => Some("file.saveAs"),
+                _ => None,
+            };
+            if let Some(id) = id {
+                ev.prevent_default();
+                crate::chrome::menu::route(id);
+                return;
+            }
+        }
+    }
+
     // Edit hotkeys are ignored while a text input has focus.
     if *TYPING.read() {
         return;

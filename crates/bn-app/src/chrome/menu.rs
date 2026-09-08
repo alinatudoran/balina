@@ -7,30 +7,34 @@
 //! The predefined clipboard items are required on macOS: without them
 //! Cmd+C/V/X do not work inside webview text inputs at all.
 
-use std::cell::RefCell;
-
-use dioxus::desktop::muda::{
-    CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu,
-};
 use dioxus::prelude::ReadableExt;
 
 use crate::state::{self, exec, open_dialog, DialogDesc, SESSION};
 
+#[cfg(not(target_arch = "wasm32"))]
+use dioxus::desktop::muda::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+
+#[cfg(not(target_arch = "wasm32"))]
 thread_local! {
     /// Handle to the Auto Update check item so `sync_menu_state` can flip it.
-    static AUTO_UPDATE_ITEM: RefCell<Option<CheckMenuItem>> = const { RefCell::new(None) };
+    static AUTO_UPDATE_ITEM: std::cell::RefCell<Option<CheckMenuItem>> =
+        const { std::cell::RefCell::new(None) };
     /// Handle to the Open Recent submenu so the list can be rebuilt live.
-    static RECENT_SUBMENU: RefCell<Option<Submenu>> = const { RefCell::new(None) };
+    static RECENT_SUBMENU: std::cell::RefCell<Option<Submenu>> =
+        const { std::cell::RefCell::new(None) };
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn item(id: &str, text: &str) -> MenuItem {
     MenuItem::with_id(id, text, true, None)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn item_accel(id: &str, text: &str, accel: &str) -> MenuItem {
     MenuItem::with_id(id, text, true, Some(accel.parse().expect("valid accelerator")))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn build() -> Menu {
     let menu = Menu::new();
 
@@ -136,6 +140,7 @@ pub fn build() -> Menu {
 
 /// Rebuild the Open Recent submenu from `list`. Item ids are
 /// `file.recent.<index>`; duplicate file names get their parent dir appended.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn rebuild_recent_items(list: &[std::path::PathBuf]) {
     RECENT_SUBMENU.with(|c| {
         let borrowed = c.borrow();
@@ -165,6 +170,7 @@ pub fn rebuild_recent_items(list: &[std::path::PathBuf]) {
 }
 
 /// Best-effort sync of the Auto Update check item with the document state.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn sync_auto_update_item(on: bool) {
     AUTO_UPDATE_ITEM.with(|c| {
         if let Some(item) = c.borrow().as_ref() {
@@ -172,6 +178,11 @@ pub fn sync_auto_update_item(on: bool) {
         }
     });
 }
+
+/// Web has no native menu handle; the in-app menu bar reads the document
+/// state reactively instead.
+#[cfg(target_arch = "wasm32")]
+pub fn sync_auto_update_item(_on: bool) {}
 
 /// Route a menu event by id. Runs on the UI thread; long flows spawn.
 pub fn route(id: &str) {
@@ -182,7 +193,9 @@ pub fn route(id: &str) {
         "file.saveAs" => crate::chrome::file_ops::file_save(true),
         "file.exportSvg" => crate::export::export_svg(),
         "file.exportPng" => crate::export::export_png(),
+        #[cfg(not(target_arch = "wasm32"))]
         "file.recent.clear" => crate::chrome::recent::clear(),
+        #[cfg(not(target_arch = "wasm32"))]
         _ if id.starts_with("file.recent.") => {
             if let Some(path) = id
                 .strip_prefix("file.recent.")
