@@ -2,9 +2,7 @@
 
 Bayesian And Logical Influence-diagram Network Application
 
-![screenshot](media/screenshot.png)
-
-
+![screenshot](demo/screenshot.png)
 
 ## Features
 
