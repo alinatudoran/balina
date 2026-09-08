@@ -2,9 +2,13 @@
 
 Balina is a Bayesian network / influence diagram editor:
 a pure-Rust inference engine (`bn-core`), a frontend-agnostic application
-session (`bn-session`), and a **Dioxus 0.7 desktop app** (`crates/bn-app/`, crate
-`bn-app`) — the whole application is Rust in a single process; the UI
-renders in the system webview. This document is the map; the other docs go
+session (`bn-session`), and a **Dioxus 0.7 app** (`crates/bn-app/`, crate
+`bn-app`) that compiles two ways from one codebase: a desktop app (default —
+the UI renders in the system webview) and a browser app
+(`--no-default-features --features web`, wasm32), where long-running
+structure learning executes in a Web Worker built from `crates/bn-worker`.
+The whole application is Rust in a single process (the web worker being the
+one deliberate exception). This document is the map; the other docs go
 deep:
 
 | Doc | Contents |
@@ -61,16 +65,23 @@ balina/
 │       ├── assets/main.css     # COMMITTED build output (embedded via include_str!)
 │       ├── LICENSES/           # MIT license of the forked Dioxus/UI workflow component
 │       └── src/
-│           ├── main.rs         # window + muda menu config, CLI file arg, launch
+│           ├── main.rs         # dual entry: desktop (window + muda menu + CLI arg) | web (plain launch)
 │           ├── app.rs          # root layout, menu routing, title sync, palette drag, hotkey host
+│           ├── platform/       # desktop/web facade: CaseFile picking, sleep, title, confirm,
+│           │                   #   downloads (web), run_structure_job (spawn_blocking | Web Worker)
 │           ├── state/          # SESSION signal + exec(), SELECTION, DIALOG, MESSAGES, TYPING
 │           ├── canvas/         # the node editor (fork of Dioxus/UI's workflow component):
 │           │                   #   geometry/scene/validation (pure) · controller (gestures)
 │           │                   #   canvas/node/edge/preview/context_menu/minimap (components)
-│           ├── chrome/         # menu (muda), toolbar, status bar, message log, hotkeys, file ops (rfd)
+│           ├── chrome/         # menu (muda, desktop) + menu_bar (in-app, web), toolbar, status bar,
+│           │                   #   message log, hotkeys, file ops (rfd | file-input + downloads)
 │           ├── dialogs/        # host + node props, CPT editor, learning, simulate, sensitivity, misc
 │           ├── ui/             # minimal UI kit (Modal, Modeless, TextInput with TYPING guard)
 │           └── logic/          # pure helpers: format.rs, cpt_math.rs (unit-tested)
+└── crates/bn-worker/           # web-only: structure learning as a standalone wasm module
+    └── src/                    #   proto.rs (JSON wire types, PROTO_VERSION), entry.rs
+                                #   (worker_entry: run job, post progress + by-name StructurePatch)
+                                #   built by scripts/build-worker.sh into bn-app/assets/worker/
 ```
 
 ## Data-flow in one paragraph

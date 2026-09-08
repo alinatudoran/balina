@@ -1,0 +1,73 @@
+name: Deploy Web
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write      # deploy to GitHub Pages
+  id-token: write   # OIDC token for deploy-pages verification
+
+# One Pages deployment at a time; never cancel an in-flight deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build web (wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/bn-app -> ../../target
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      # Pinned to the version verified against this web pipeline; bump deliberately.
+      - name: Install dioxus-cli
+        run: cargo binstall dioxus-cli@0.7.10 --no-confirm --locked
+
+      # MUST be exactly 0.2.128 to match the workspace's locked wasm-bindgen;
+      # version skew is a hard runtime failure (see scripts/build-worker.sh).
+      - name: Install wasm-bindgen-cli
+        run: cargo binstall wasm-bindgen-cli@0.2.128 --no-confirm --locked
+
+      # Builds bn-worker to wasm and writes the gitignored
+      # crates/bn-app/assets/worker/ artifacts the app include_bytes!-embeds.
+      - name: Build worker wasm
+        run: sh scripts/build-worker.sh
+
+      # --base-path matches the repo name: the site is served at
+      # https://<user>.github.io/balina/. Drop it if a custom domain is added.
+      - name: Build web app
+        working-directory: crates/bn-app
+        run: dx build --web --release --no-default-features --features web --base-path balina
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/dx/balina/release/web/public
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

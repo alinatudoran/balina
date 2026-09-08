@@ -12,6 +12,7 @@ pub fn SimulateDialog() -> Element {
     let mut missing_pct = use_signal(|| 0.0f64);
     let mut running = use_signal(|| false);
 
+    #[cfg(not(target_arch = "wasm32"))]
     let generate = move |_| {
         spawn(async move {
             let picked = rfd::AsyncFileDialog::new()
@@ -38,6 +39,24 @@ pub fn SimulateDialog() -> Element {
                 Err(e) => log_message(format!("Simulation crashed: {e}")),
             }
         });
+    };
+
+    // Web: generate on the main thread (a brief stall at very large counts)
+    // and hand the CSV to the browser as a download.
+    #[cfg(target_arch = "wasm32")]
+    let generate = move |_| {
+        running.set(true);
+        let net = SESSION.read().doc.net.clone();
+        let (count, pct) = (*n.read(), *missing_pct.read());
+        match bn_session::ops::learn::simulate_cases_csv(&net, count, pct) {
+            Ok(csv) => {
+                crate::platform::download("cases.csv", "text/csv", csv.as_bytes());
+                log_message(format!("Wrote {count} cases to cases.csv (downloaded)."));
+                close_dialog();
+            }
+            Err(e) => log_message(format!("Simulation failed: {e}")),
+        }
+        running.set(false);
     };
 
     rsx! {

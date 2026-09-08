@@ -1,11 +1,16 @@
 [workspace]
 resolver = "2"
-members = ["crates/bn-core", "crates/bn-session", "crates/bn-app"]
+members = ["crates/bn-core", "crates/bn-session", "crates/bn-app", "crates/bn-worker"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 license = "MIT"
+
+# Strip DWARF from release artifacts: the precompiled std for wasm32 ships
+# debug info that wasm-opt's outdated DWARF parser can't handle (SIGABRT).
+[profile.release]
+strip = "debuginfo"
 
 [profile.dev]
 opt-level = 1

@@ -111,8 +111,10 @@ pub struct ContextMenuState {
     pub client: (f64, f64),
 }
 
-/// Last directory used by case-file pickers (learn/simulate).
-pub static LAST_CASE_DIR: GlobalSignal<Option<std::path::PathBuf>> = Signal::global(|| None);
+/// Last case file picked by the learn dialogs (its directory pre-fills the
+/// next picker on desktop; the handle stays readable on web).
+pub static LAST_CASE_FILE: GlobalSignal<Option<crate::platform::CaseFile>> =
+    Signal::global(|| None);
 
 /// Progress of the in-flight background job (structure learning).
 pub static JOB_PROGRESS: GlobalSignal<Option<bn_session::jobs::JobEvent>> =
@@ -131,6 +133,9 @@ pub enum DialogDesc {
     IdSolution { text: String },
     RenameNetwork,
     About,
+    /// Web only: filename + format picker for the save-as-download flow.
+    #[cfg(target_arch = "wasm32")]
+    SaveAsWeb,
 }
 
 pub fn open_dialog(d: DialogDesc) {

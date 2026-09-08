@@ -4,3 +4,7 @@ node_modules/
 .claude
 .DS_Store
 crates/bn-app/node_modules
+
+# Web Worker wasm artifacts (built on demand: scripts/build-worker.sh)
+crates/bn-app/assets/worker/bn_worker.js
+crates/bn-app/assets/worker/bn_worker_bg.wasm

@@ -11,6 +11,7 @@ pub mod engine_bridge;
 pub mod error;
 pub mod jobs;
 pub mod ops;
+pub mod patch;
 pub mod session;
 pub mod views;
 

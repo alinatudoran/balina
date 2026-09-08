@@ -126,10 +126,17 @@ pub fn AboutDialog() -> Element {
     rsx! {
         Modal {
             title: "About Balina",
-            width: "max-w-sm",
+            width: "max-w-lg",
             on_close: move |_| close_dialog(),
             div { class: "space-y-1 text-sm",
                 p { "Balina — a Bayesian network / influence diagram editor." }
+                p { "Project page: ", a {
+                    class: "text-blue-800 hover:underline",
+                    href: "https://github.com/alinatudoran/balina",
+                    target: "_blank",
+                    "https://github.com/alinatudoran/balina"
+                }},
+                p { "Distributed under the MIT License."}
                 p { class: "text-muted-foreground text-xs",
                     "Version {env!(\"CARGO_PKG_VERSION\")}"
                 }

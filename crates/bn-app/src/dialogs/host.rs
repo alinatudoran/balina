@@ -59,5 +59,9 @@ pub fn DialogHost() -> Element {
         DialogDesc::About => rsx! {
             crate::dialogs::misc::AboutDialog {}
         },
+        #[cfg(target_arch = "wasm32")]
+        DialogDesc::SaveAsWeb => rsx! {
+            crate::dialogs::save_web::SaveAsWebDialog {}
+        },
     }
 }
