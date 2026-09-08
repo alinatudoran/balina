@@ -49,6 +49,38 @@ pub async fn sleep_ms(ms: u64) {
     gloo_timers::future::TimeoutFuture::new(ms as u32).await;
 }
 
+/// The `file` query parameter of the page URL, if present and non-empty:
+/// `…/?file={url}` asks the app to open that network on startup.
+pub fn initial_file_url() -> Option<String> {
+    let search = web_sys::window()?.location().search().ok()?;
+    let params = web_sys::UrlSearchParams::new_with_str(&search).ok()?;
+    params.get("file").filter(|u| !u.trim().is_empty())
+}
+
+fn js_err(v: wasm_bindgen::JsValue) -> String {
+    use wasm_bindgen::JsCast;
+    match v.dyn_ref::<js_sys::Error>() {
+        Some(e) => String::from(e.message()),
+        None => v.as_string().unwrap_or_else(|| format!("{v:?}")),
+    }
+}
+
+/// GET `url` with the browser's fetch and return the body as text. `Err` is
+/// a readable message (network/CORS failure or non-2xx status).
+pub async fn fetch_text(url: &str) -> Result<String, String> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+
+    let window = web_sys::window().ok_or("no window")?;
+    let resp = JsFuture::from(window.fetch_with_str(url)).await.map_err(js_err)?;
+    let resp: web_sys::Response = resp.dyn_into().map_err(js_err)?;
+    if !resp.ok() {
+        return Err(format!("HTTP {} {}", resp.status(), resp.status_text()));
+    }
+    let text = JsFuture::from(resp.text().map_err(js_err)?).await.map_err(js_err)?;
+    text.as_string().ok_or_else(|| "response body is not text".into())
+}
+
 /// The browser tab title.
 pub fn set_window_title(title: &str) {
     if let Some(doc) = web_sys::window().and_then(|w| w.document()) {

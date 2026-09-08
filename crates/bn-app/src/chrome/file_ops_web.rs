@@ -40,6 +40,20 @@ pub fn file_new() {
     });
 }
 
+/// Replace the document with parsed `text`, then reset selection, fit the
+/// view and report — shared tail of the picker and URL open flows.
+fn open_text(text: &str, fmt: io::Format) {
+    if exec(|s| ops::file::doc_open_str(s, text, fmt)).is_some() {
+        crate::state::clear_selection();
+        *crate::canvas::controller::FIT_REQUEST.write() += 1;
+        let (name, n) = {
+            let s = SESSION.read();
+            (s.doc.net.name.clone(), s.doc.net.len())
+        };
+        log_message(format!("Loaded `{name}` ({n} nodes)."));
+    }
+}
+
 pub fn file_open() {
     spawn(async move {
         if !confirm_discard("Discard them and open another file").await {
@@ -65,15 +79,26 @@ pub fn file_open() {
                 return;
             }
         };
-        if exec(|s| ops::file::doc_open_str(s, &text, fmt)).is_some() {
-            crate::state::clear_selection();
-            *crate::canvas::controller::FIT_REQUEST.write() += 1;
-            let (name, n) = {
-                let s = SESSION.read();
-                (s.doc.net.name.clone(), s.doc.net.len())
-            };
-            log_message(format!("Loaded `{name}` ({n} nodes)."));
-        }
+        open_text(&text, fmt);
+    });
+}
+
+/// Fetch `url` and open it (the `?file={url}` startup path). Format comes
+/// from the URL's extension, defaulting to the native format when there is
+/// none — a wrong guess just surfaces as a parse error in the message log.
+pub fn open_url(url: String) {
+    spawn(async move {
+        let text = match crate::platform::fetch_text(&url).await {
+            Ok(t) => t,
+            Err(e) => {
+                log_message(format!("Open failed: {e} ({url})"));
+                return;
+            }
+        };
+        let path = url.split(['?', '#']).next().unwrap_or("");
+        let fmt = io::Format::from_path(std::path::Path::new(path))
+            .unwrap_or(io::Format::NativeJson);
+        open_text(&text, fmt);
     });
 }
 

@@ -44,8 +44,13 @@ web-sys = { version = "0.3", features = [
     "Blob",
     "BlobPropertyBag",
     "Document",
+    "Location",
     "MessageEvent",
+    "Request",
+    "RequestInit",
+    "Response",
     "Url",
+    "UrlSearchParams",
     "Window",
     "Worker",
 ] }
