@@ -42,11 +42,17 @@ fn finish_palette_drag(kind: bn_core::model::NodeKind, start: (f64, f64), c: (f6
 
 #[component]
 pub fn App() -> Element {
-    // Initial mount: open the CLI file (desktop) or make sure beliefs exist.
+    // Initial mount: open the CLI file (desktop) / the `?file={url}` network
+    // (web), or make sure beliefs exist.
     use_hook(|| {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(path) = crate::INITIAL_FILE.get() {
             crate::chrome::file_ops::open_path(path.clone());
+            return;
+        }
+        #[cfg(target_arch = "wasm32")]
+        if let Some(url) = crate::platform::initial_file_url() {
+            crate::chrome::file_ops::open_url(url);
             return;
         }
         exec(|s| {
