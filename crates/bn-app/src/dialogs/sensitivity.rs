@@ -5,8 +5,8 @@ use bn_core::model::{NodeId, NodeKind};
 use bn_session::views::SensRowView;
 use dioxus::prelude::*;
 
-use crate::state::{close_dialog, exec, SESSION};
-use crate::ui::{Modeless, BTN_PRIMARY, SELECT};
+use crate::state::{close_dialog, exec, log_message, SESSION};
+use crate::ui::{Modeless, BTN_PRIMARY, BTN_SM, SELECT};
 
 #[component]
 pub fn SensitivityDialog() -> Element {
@@ -40,6 +40,54 @@ pub fn SensitivityDialog() -> Element {
         }
     };
 
+    // CSV of the rows still valid at click time (same staleness filter as
+    // the table); the dialog stays open so the user can keep exploring.
+    let export_csv = move || -> Option<String> {
+        let (target_name, live) = {
+            let s = SESSION.read();
+            let target_name = target
+                .read()
+                .filter(|&t| s.doc.net.contains(t))
+                .map(|t| s.doc.net.node(t).name.clone())
+                .unwrap_or_else(|| "(deleted)".into());
+            let live: Vec<SensRowView> =
+                rows.read().iter().filter(|r| s.doc.net.contains(r.node)).cloned().collect();
+            (target_name, live)
+        };
+        match bn_session::ops::tools::sensitivity_csv(&target_name, &live) {
+            Ok(csv) => Some(csv),
+            Err(e) => {
+                log_message(format!("CSV export failed: {e}"));
+                None
+            }
+        }
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let save = move |_| {
+        let Some(csv) = export_csv() else { return };
+        spawn(async move {
+            let picked = rfd::AsyncFileDialog::new()
+                .add_filter("CSV", &["csv"])
+                .set_file_name("sensitivity.csv")
+                .save_file()
+                .await;
+            let Some(fh) = picked else { return };
+            let path = fh.path().to_path_buf();
+            match std::fs::write(&path, csv) {
+                Ok(()) => log_message(format!("Exported {}.", path.display())),
+                Err(e) => log_message(format!("CSV export failed: {e}")),
+            }
+        });
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    let save = move |_| {
+        let Some(csv) = export_csv() else { return };
+        crate::platform::download("sensitivity.csv", "text/csv", csv.as_bytes());
+        log_message("Exported sensitivity.csv (downloaded).".to_string());
+    };
+
     rsx! {
         Modeless {
             title: "Sensitivity to findings",
@@ -71,6 +119,12 @@ pub fn SensitivityDialog() -> Element {
                     disabled: !target_valid,
                     onclick: run,
                     "Run"
+                }
+                button {
+                    class: BTN_SM,
+                    disabled: live_rows.is_empty(),
+                    onclick: save,
+                    "Save CSV…"
                 }
             }
             if !live_rows.is_empty() {

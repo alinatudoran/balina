@@ -3,22 +3,22 @@
 
 use dioxus::prelude::*;
 
-use crate::canvas::canvas::default_node_footprint;
 use crate::canvas::context_menu::ContextMenuHost;
-use crate::canvas::controller::{Gesture, GESTURE, VIEWPORT};
+use crate::canvas::controller::{Gesture, PaletteItem, GESTURE, VIEWPORT};
 use crate::canvas::node::kind_header_color;
-use crate::chrome::toolbar::{add_at_center, Toolbar};
+use crate::canvas::sticky::note_fill;
+use crate::chrome::toolbar::{add_at_center, palette_footprint, Toolbar};
 use crate::chrome::{message_log::MessageLog, status_bar::StatusBar};
 use crate::state::{exec, SESSION};
 
 /// Finish a palette drag at `c` (client coords): a barely-moved click adds
 /// at view center; a drop inside the canvas adds at the cursor; anything
 /// else cancels.
-fn finish_palette_drag(kind: bn_core::model::NodeKind, start: (f64, f64), c: (f64, f64)) {
+fn finish_palette_drag(item: PaletteItem, start: (f64, f64), c: (f64, f64)) {
     *GESTURE.write() = Gesture::Idle;
     let moved = ((c.0 - start.0).powi(2) + (c.1 - start.1).powi(2)).sqrt() > 4.0;
     if !moved {
-        add_at_center(kind);
+        add_at_center(item);
         return;
     }
     let vp = *VIEWPORT.read();
@@ -28,15 +28,18 @@ fn finish_palette_drag(kind: bn_core::model::NodeKind, start: (f64, f64), c: (f6
         && c.1 <= vp.origin.1 + vp.size.1;
     if inside {
         let w = vp.client_to_world(c.0, c.1);
-        let (fw, fh) = default_node_footprint(kind);
-        exec(|s| {
-            bn_session::ops::edit::add_node(
-                s,
-                kind,
-                (w.x - fw / 2.0) as f32,
-                (w.y - fh / 2.0) as f32,
-            )
-        });
+        let (fw, fh) = palette_footprint(item);
+        let (x, y) = ((w.x - fw / 2.0) as f32, (w.y - fh / 2.0) as f32);
+        match item {
+            PaletteItem::Node(kind) => {
+                exec(|s| bn_session::ops::edit::add_node(s, kind, x, y));
+            }
+            PaletteItem::Note => {
+                if let Some(id) = exec(|s| bn_session::ops::edit::add_note(s, x, y)) {
+                    crate::state::focus_new_note(id);
+                }
+            }
+        }
     }
 }
 
@@ -77,7 +80,7 @@ pub fn App() -> Element {
     });
 
     let palette_ghost = match &*GESTURE.read() {
-        Gesture::PaletteDrag { kind, cur_client, .. } => Some((*kind, *cur_client)),
+        Gesture::PaletteDrag { item, cur_client, .. } => Some((*item, *cur_client)),
         _ => None,
     };
     let conflict = SESSION.read().bridge.conflict;
@@ -94,13 +97,13 @@ pub fn App() -> Element {
                 // keeps the read guard alive through the body (Rust 2024
                 // scrutinee scoping), and the body writes GESTURE → panic.
                 let g = GESTURE.read().clone();
-                if let Gesture::PaletteDrag { kind, start_client, .. } = g {
+                if let Gesture::PaletteDrag { item, start_client, .. } = g {
                     let c = ev.data().client_coordinates();
                     if ev.data().held_buttons().is_empty() {
-                        finish_palette_drag(kind, start_client, (c.x, c.y));
+                        finish_palette_drag(item, start_client, (c.x, c.y));
                     } else {
                         *GESTURE.write() = Gesture::PaletteDrag {
-                            kind,
+                            item,
                             start_client,
                             cur_client: (c.x, c.y),
                         };
@@ -109,9 +112,9 @@ pub fn App() -> Element {
             },
             onmouseup: move |ev| {
                 let g = GESTURE.read().clone();
-                if let Gesture::PaletteDrag { kind, start_client, .. } = g {
+                if let Gesture::PaletteDrag { item, start_client, .. } = g {
                     let c = ev.data().client_coordinates();
-                    finish_palette_drag(kind, start_client, (c.x, c.y));
+                    finish_palette_drag(item, start_client, (c.x, c.y));
                 }
             },
             crate::chrome::menu_bar::MenuBar {}
@@ -142,11 +145,23 @@ pub fn App() -> Element {
             MessageLog {}
             ContextMenuHost {}
             crate::dialogs::host::DialogHost {}
-            if let Some((kind, (gx, gy))) = palette_ghost {
-                div {
-                    class: "pointer-events-none fixed z-50 rounded border px-2 py-1 text-xs shadow-md",
-                    style: "left: {gx + 6.0}px; top: {gy + 6.0}px; background: {kind_header_color(kind)};",
-                    "{kind:?}"
+            if let Some((item, (gx, gy))) = palette_ghost {
+                {
+                    let (bg, label) = match item {
+                        PaletteItem::Node(kind) => {
+                            (kind_header_color(kind).to_string(), format!("{kind:?}"))
+                        }
+                        PaletteItem::Note => {
+                            (note_fill(bn_session::doc::NOTE_DEFAULT_COLOR), "Note".to_string())
+                        }
+                    };
+                    rsx! {
+                        div {
+                            class: "pointer-events-none fixed z-50 rounded border px-2 py-1 text-xs shadow-md",
+                            style: "left: {gx + 6.0}px; top: {gy + 6.0}px; background: {bg};",
+                            "{label}"
+                        }
+                    }
                 }
             }
         }

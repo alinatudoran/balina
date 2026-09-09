@@ -13,12 +13,13 @@ use dioxus::prelude::*;
 
 use crate::canvas::controller::{
     self, drag_update, rubber_band_world_rect, Gesture, DRAG_HAPPENED, DRAG_POS, FIT_REQUEST,
-    GESTURE, VIEWPORT,
+    GESTURE, NOTE_DRAG_POS, NOTE_RESIZE, VIEWPORT,
 };
 use crate::canvas::edge::{EdgeLayer, EdgeMarkers};
 use crate::canvas::node::BnNode;
 use crate::canvas::preview::ConnectionPreview;
-use crate::canvas::scene::build_scene;
+use crate::canvas::scene::{build_scene, NoteOverrides};
+use crate::canvas::sticky::StickyNote;
 use crate::state::{
     exec, ContextMenuState, ContextMenuTarget, CONTEXT_MENU, SELECTION, SESSION,
 };
@@ -35,7 +36,11 @@ pub fn NetworkCanvas() -> Element {
 
     let scene = use_memo(move || {
         let s = SESSION.read();
-        build_scene(&s.doc, &DRAG_POS.read())
+        let note_ov = NoteOverrides {
+            pos: NOTE_DRAG_POS.read().clone(),
+            size: *NOTE_RESIZE.read(),
+        };
+        build_scene(&s.doc, &DRAG_POS.read(), &note_ov)
     });
 
     // Fit-view on request (doc load bumps FIT_REQUEST; also first mount).
@@ -87,24 +92,48 @@ pub fn NetworkCanvas() -> Element {
                 *GESTURE.write() = Gesture::Idle;
             }
             Gesture::DragNodes { .. } => {
-                // ONE move_nodes op per drag = one undo step.
+                // ONE move_items op per drag = one undo step.
                 let moves: Vec<(bn_core::model::NodeId, f32, f32)> = DRAG_POS
                     .read()
                     .iter()
                     .map(|(&id, &(x, y))| (id, x as f32, y as f32))
                     .collect();
+                let note_moves: Vec<(bn_session::NoteId, f32, f32)> = NOTE_DRAG_POS
+                    .read()
+                    .iter()
+                    .map(|(&id, &(x, y))| (id, x as f32, y as f32))
+                    .collect();
                 *GESTURE.write() = Gesture::Idle;
-                if !moves.is_empty() {
-                    exec(|s| bn_session::ops::edit::move_nodes(s, &moves));
+                if !moves.is_empty() || !note_moves.is_empty() {
+                    exec(|s| bn_session::ops::edit::move_items(s, &moves, &note_moves));
                 }
                 DRAG_POS.write().clear();
+                NOTE_DRAG_POS.write().clear();
+            }
+            Gesture::ResizeNote { id, .. } => {
+                let size = *NOTE_RESIZE.read();
+                *GESTURE.write() = Gesture::Idle;
+                if let Some((rid, w, h)) = size {
+                    if rid == id {
+                        exec(|s| {
+                            bn_session::ops::edit::resize_note(s, id, w as f32, h as f32)
+                        });
+                    }
+                }
+                *NOTE_RESIZE.write() = None;
             }
             Gesture::RubberBand { start_client, cur_client, additive } => {
                 *GESTURE.write() = Gesture::Idle;
                 let world = rubber_band_world_rect(&VIEWPORT.read(), start_client, cur_client);
-                let hits: Vec<bn_core::model::NodeId> = scene
-                    .peek()
+                let scene_now = scene.peek();
+                let hits: Vec<bn_core::model::NodeId> = scene_now
                     .nodes
+                    .iter()
+                    .filter(|n| n.rect.intersects(&world))
+                    .map(|n| n.id)
+                    .collect();
+                let note_hits: Vec<bn_session::NoteId> = scene_now
+                    .notes
                     .iter()
                     .filter(|n| n.rect.intersects(&world))
                     .map(|n| n.id)
@@ -113,8 +142,10 @@ pub fn NetworkCanvas() -> Element {
                 if !additive {
                     sel.nodes.clear();
                     sel.edges.clear();
+                    sel.notes.clear();
                 }
                 sel.nodes.extend(hits);
+                sel.notes.extend(note_hits);
             }
             Gesture::Connect { .. } => controller::cancel_gesture(),
             Gesture::Reconnect { parent, orig_child, .. } => {
@@ -205,7 +236,7 @@ pub fn NetworkCanvas() -> Element {
                     return;
                 }
                 match g {
-                    Gesture::PendingNodeDrag { start_client, starts } => {
+                    Gesture::PendingNodeDrag { start_client, starts, note_starts } => {
                         let dist = ((c.x - start_client.0).powi(2)
                             + (c.y - start_client.1).powi(2))
                         .sqrt();
@@ -214,12 +245,25 @@ pub fn NetworkCanvas() -> Element {
                             let zoom = VIEWPORT.read().zoom;
                             *DRAG_POS.write() =
                                 drag_update(&starts, start_client, (c.x, c.y), zoom);
-                            *GESTURE.write() = Gesture::DragNodes { start_client, starts };
+                            *NOTE_DRAG_POS.write() =
+                                drag_update(&note_starts, start_client, (c.x, c.y), zoom);
+                            *GESTURE.write() =
+                                Gesture::DragNodes { start_client, starts, note_starts };
                         }
                     }
-                    Gesture::DragNodes { start_client, starts } => {
+                    Gesture::DragNodes { start_client, starts, note_starts } => {
                         let zoom = VIEWPORT.read().zoom;
                         *DRAG_POS.write() = drag_update(&starts, start_client, (c.x, c.y), zoom);
+                        *NOTE_DRAG_POS.write() =
+                            drag_update(&note_starts, start_client, (c.x, c.y), zoom);
+                    }
+                    Gesture::ResizeNote { id, start_client, start_size } => {
+                        let zoom = VIEWPORT.read().zoom;
+                        let w = (start_size.0 + (c.x - start_client.0) / zoom)
+                            .max(bn_session::NOTE_MIN_SIZE.0 as f64);
+                        let h = (start_size.1 + (c.y - start_client.1) / zoom)
+                            .max(bn_session::NOTE_MIN_SIZE.1 as f64);
+                        *NOTE_RESIZE.write() = Some((id, w, h));
                     }
                     Gesture::Pan { start_client, pan_start } => {
                         let mut vp = VIEWPORT.write();
@@ -305,6 +349,11 @@ pub fn NetworkCanvas() -> Element {
 
                 for n in scene.read().nodes.iter() {
                     BnNode { key: "{n.id:?}", id: n.id, rect: n.rect }
+                }
+
+                // Sticky notes float in front of the network.
+                for n in scene.read().notes.iter() {
+                    StickyNote { key: "{n.id:?}", id: n.id, rect: n.rect }
                 }
             }
 

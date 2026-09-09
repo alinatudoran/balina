@@ -3,10 +3,10 @@
 use bn_core::io::DisplayMode;
 use bn_core::model::{NodeId, NodeKind, State};
 
-use crate::doc::{Dirt, Point};
+use crate::doc::{Dirt, NoteId, Point, NOTE_FONT_RANGE, NOTE_MIN_SIZE};
 use crate::error::CmdError;
 use crate::session::Session;
-use crate::views::{check_node, NodePropsPatch};
+use crate::views::{check_node, check_note, NodePropsPatch};
 
 // ---- structure (Dirt::Structure) -----------------------------------------
 
@@ -68,6 +68,7 @@ pub fn delete_items(
     s: &mut Session,
     nodes: &[NodeId],
     edges: &[(NodeId, NodeId)],
+    notes: &[NoteId],
 ) -> Result<(), CmdError> {
     for &id in nodes {
         check_node(&s.doc.net, id)?;
@@ -76,7 +77,10 @@ pub fn delete_items(
         check_node(&s.doc.net, a)?;
         check_node(&s.doc.net, b)?;
     }
-    let dirt = s.doc.delete_items(nodes, edges);
+    for &id in notes {
+        check_note(&s.doc.notes, id)?;
+    }
+    let dirt = s.doc.delete_items(nodes, edges, notes);
     s.finish(dirt);
     Ok(())
 }
@@ -142,19 +146,88 @@ pub fn set_network_name(s: &mut Session, name: String) {
 
 // ---- visual (undoable, but no model-generation bump) ----------------------
 
-pub fn move_nodes(s: &mut Session, moves: &[(NodeId, f32, f32)]) -> Result<(), CmdError> {
-    for &(id, _, _) in moves {
+/// Commit a drag of nodes and/or notes as ONE undoable step.
+pub fn move_items(
+    s: &mut Session,
+    nodes: &[(NodeId, f32, f32)],
+    notes: &[(NoteId, f32, f32)],
+) -> Result<(), CmdError> {
+    for &(id, _, _) in nodes {
         check_node(&s.doc.net, id)?;
     }
-    if moves.is_empty() {
+    for &(id, _, _) in notes {
+        check_note(&s.doc.notes, id)?;
+    }
+    if nodes.is_empty() && notes.is_empty() {
         return Ok(());
     }
     s.doc.begin_visual_change();
-    for &(id, x, y) in moves {
+    for &(id, x, y) in nodes {
         if let Some(v) = s.doc.visual.get_mut(id) {
             v.pos = Point::new(x, y);
         }
     }
+    for &(id, x, y) in notes {
+        if let Some(n) = s.doc.notes.get_mut(id) {
+            n.pos = Point::new(x, y);
+        }
+    }
+    Ok(())
+}
+
+// ---- sticky notes (all visual-only) ----------------------------------------
+
+pub fn add_note(s: &mut Session, x: f32, y: f32) -> Result<NoteId, CmdError> {
+    Ok(s.doc.add_note_at(Point::new(x, y)))
+}
+
+pub fn resize_note(s: &mut Session, id: NoteId, w: f32, h: f32) -> Result<(), CmdError> {
+    check_note(&s.doc.notes, id)?;
+    s.doc.begin_visual_change();
+    let n = &mut s.doc.notes[id];
+    n.w = w.max(NOTE_MIN_SIZE.0);
+    n.h = h.max(NOTE_MIN_SIZE.1);
+    Ok(())
+}
+
+pub fn set_note_text(s: &mut Session, id: NoteId, text: String) -> Result<(), CmdError> {
+    check_note(&s.doc.notes, id)?;
+    if s.doc.notes[id].text == text {
+        return Ok(()); // a blur that changed nothing must not add an undo step
+    }
+    s.doc.begin_visual_change();
+    s.doc.notes[id].text = text;
+    Ok(())
+}
+
+pub fn set_note_color(s: &mut Session, id: NoteId, color: [u8; 3]) -> Result<(), CmdError> {
+    check_note(&s.doc.notes, id)?;
+    s.doc.begin_visual_change();
+    s.doc.notes[id].color = color;
+    Ok(())
+}
+
+/// Collapse a note to its title bar / expand it back (`w`/`h` are kept).
+pub fn set_note_collapsed(s: &mut Session, id: NoteId, collapsed: bool) -> Result<(), CmdError> {
+    check_note(&s.doc.notes, id)?;
+    if s.doc.notes[id].collapsed == collapsed {
+        return Ok(());
+    }
+    s.doc.begin_visual_change();
+    s.doc.notes[id].collapsed = collapsed;
+    Ok(())
+}
+
+/// Bump the note's font size by `delta` points, clamped to `NOTE_FONT_RANGE`.
+pub fn nudge_note_font(s: &mut Session, id: NoteId, delta: f32) -> Result<(), CmdError> {
+    check_note(&s.doc.notes, id)?;
+    let cur = s.doc.notes[id].font_size;
+    let next = (cur + delta).clamp(NOTE_FONT_RANGE.0, NOTE_FONT_RANGE.1);
+    if next == cur {
+        return Ok(());
+    }
+    s.doc.begin_visual_change();
+    s.doc.notes[id].font_size = next;
     Ok(())
 }
 

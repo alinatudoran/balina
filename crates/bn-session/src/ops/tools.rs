@@ -102,6 +102,42 @@ pub fn run_arc_strengths(s: &mut Session) -> Result<Vec<ArcStrengthRow>, CmdErro
     Ok(out)
 }
 
+/// Render arc-strength rows as CSV text (header + one row per arc).
+/// Platform-agnostic; callers do the I/O.
+pub fn arc_strengths_csv(rows: &[ArcStrengthRow]) -> Result<String, CmdError> {
+    let mut wtr = csv::Writer::from_writer(Vec::new());
+    wtr.write_record(["parent", "child", "strength_bits"])
+        .map_err(|e| CmdError::Io(e.to_string()))?;
+    for r in rows {
+        wtr.write_record([&r.parent_name, &r.child_name, &r.mutual_info.to_string()])
+            .map_err(|e| CmdError::Io(e.to_string()))?;
+    }
+    let buf = wtr.into_inner().map_err(|e| CmdError::Io(e.to_string()))?;
+    String::from_utf8(buf).map_err(|e| CmdError::Io(e.to_string()))
+}
+
+/// Render sensitivity-to-findings rows as CSV text (header + one row per
+/// candidate node). `target_name` is repeated per row so the file records
+/// which target the run was for. Platform-agnostic; callers do the I/O.
+pub fn sensitivity_csv(target_name: &str, rows: &[SensRowView]) -> Result<String, CmdError> {
+    let mut wtr = csv::Writer::from_writer(Vec::new());
+    wtr.write_record(["target", "node", "mutual_info_bits", "entropy_reduction_pct", "variance_reduction"])
+        .map_err(|e| CmdError::Io(e.to_string()))?;
+    for r in rows {
+        let variance = r.variance_reduction.map(|v| v.to_string()).unwrap_or_default();
+        wtr.write_record([
+            target_name,
+            &r.name,
+            &r.mutual_info.to_string(),
+            &r.entropy_reduction_pct.to_string(),
+            &variance,
+        ])
+        .map_err(|e| CmdError::Io(e.to_string()))?;
+    }
+    let buf = wtr.into_inner().map_err(|e| CmdError::Io(e.to_string()))?;
+    String::from_utf8(buf).map_err(|e| CmdError::Io(e.to_string()))
+}
+
 /// Format an ID solution as readable text.
 pub fn format_id_solution(doc: &Document, sol: &bn_core::decision::IdSolution) -> String {
     let mut out = format!("Maximum expected utility: {:.4}\n", sol.meu);
@@ -131,4 +167,47 @@ pub fn format_id_solution(doc: &Document, sol: &bn_core::decision::IdSolution) -
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn arc_strengths_csv_quotes_names() {
+        let row = |p: &str, c: &str, mi: f64| ArcStrengthRow {
+            parent: NodeId::default(),
+            child: NodeId::default(),
+            parent_name: p.into(),
+            child_name: c.into(),
+            mutual_info: mi,
+        };
+        let rows = vec![row("Smoking, heavy", "Lung \"cancer\"", 0.25), row("A", "B", 0.0625)];
+        let csv = arc_strengths_csv(&rows).unwrap();
+        assert_eq!(
+            csv,
+            "parent,child,strength_bits\n\
+             \"Smoking, heavy\",\"Lung \"\"cancer\"\"\",0.25\n\
+             A,B,0.0625\n"
+        );
+    }
+
+    #[test]
+    fn sensitivity_csv_records_target_and_optional_variance() {
+        let row = |n: &str, mi: f64, ent: f64, var: Option<f64>| SensRowView {
+            node: NodeId::default(),
+            name: n.into(),
+            mutual_info: mi,
+            entropy_reduction_pct: ent,
+            variance_reduction: var,
+        };
+        let rows = vec![row("Smoking, heavy", 0.25, 12.5, Some(0.125)), row("B", 0.0625, 3.5, None)];
+        let csv = sensitivity_csv("Lung \"cancer\"", &rows).unwrap();
+        assert_eq!(
+            csv,
+            "target,node,mutual_info_bits,entropy_reduction_pct,variance_reduction\n\
+             \"Lung \"\"cancer\"\"\",\"Smoking, heavy\",0.25,12.5,0.125\n\
+             \"Lung \"\"cancer\"\"\",B,0.0625,3.5,\n"
+        );
+    }
 }

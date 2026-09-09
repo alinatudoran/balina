@@ -392,7 +392,17 @@ fn beliefs_by_name(net: &Network) -> Vec<(String, Vec<f64>)> {
 
 #[test]
 fn native_json_roundtrip() {
-    let doc = Document { network: asia(), visual: Default::default() };
+    let mut doc = Document { network: asia(), visual: Default::default() };
+    doc.visual.notes.push(io::NoteInfo {
+        text: "remember to\ncheck this".into(),
+        x: -40.0,
+        y: 25.0,
+        w: 220.0,
+        h: 160.0,
+        color: [181, 220, 255],
+        font_size: 15.0,
+        collapsed: true,
+    });
     let (text, warn) = io::save_str(&doc, Format::NativeJson).unwrap();
     assert!(warn.is_empty());
     let back = io::load_str(&text, Format::NativeJson).unwrap();
@@ -402,9 +412,46 @@ fn native_json_roundtrip() {
         assert_eq!(na, nb);
         assert_close(ba, bb, 1e-12, na);
     }
+    assert_eq!(back.visual.notes, doc.visual.notes);
     // Stable: save(load(x)) == save(x)
     let (text2, _) = io::save_str(&back, Format::NativeJson).unwrap();
     assert_eq!(text, text2);
+}
+
+#[test]
+fn native_json_without_notes_field_still_loads() {
+    // Files written before notes existed have no `notes` key.
+    let doc = Document { network: asia(), visual: Default::default() };
+    let (text, _) = io::save_str(&doc, Format::NativeJson).unwrap();
+    let stripped = {
+        let mut v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        v.as_object_mut().unwrap().remove("notes");
+        v.to_string()
+    };
+    let back = io::load_str(&stripped, Format::NativeJson).unwrap();
+    assert!(back.visual.notes.is_empty());
+}
+
+#[test]
+fn xml_formats_warn_about_omitted_notes() {
+    let mut doc = Document { network: asia(), visual: Default::default() };
+    doc.visual.notes.push(io::NoteInfo {
+        text: "hi".into(),
+        x: 0.0,
+        y: 0.0,
+        w: 200.0,
+        h: 150.0,
+        color: [255, 244, 165],
+        font_size: 13.0,
+        collapsed: false,
+    });
+    for fmt in [Format::Xmlbif, Format::Xdsl] {
+        let (_, warnings) = io::save_str(&doc, fmt).unwrap();
+        assert!(
+            warnings.iter().any(|io::Warning::Lossy(m)| m.contains("note")),
+            "{fmt:?} should warn about omitted notes"
+        );
+    }
 }
 
 #[test]

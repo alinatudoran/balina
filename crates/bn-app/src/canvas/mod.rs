@@ -17,4 +17,5 @@ pub mod minimap;
 pub mod node;
 pub mod preview;
 pub mod scene;
+pub mod sticky;
 pub mod validation;

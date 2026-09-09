@@ -4,8 +4,8 @@
 use bn_session::views::ArcStrengthRow;
 use dioxus::prelude::*;
 
-use crate::state::{close_dialog, exec, SESSION};
-use crate::ui::{Modeless, BTN_PRIMARY};
+use crate::state::{close_dialog, exec, log_message, SESSION};
+use crate::ui::{Modeless, BTN_PRIMARY, BTN_SM};
 
 #[component]
 pub fn ArcStrengthDialog() -> Element {
@@ -35,6 +35,51 @@ pub fn ArcStrengthDialog() -> Element {
         }
     };
 
+    // CSV of the rows still valid at click time (same staleness filter as
+    // the table); the dialog stays open so the user can keep exploring.
+    let export_csv = move || -> Option<String> {
+        let live: Vec<ArcStrengthRow> = {
+            let s = SESSION.read();
+            rows.read()
+                .iter()
+                .filter(|r| s.doc.net.contains(r.parent) && s.doc.net.contains(r.child))
+                .cloned()
+                .collect()
+        };
+        match bn_session::ops::tools::arc_strengths_csv(&live) {
+            Ok(csv) => Some(csv),
+            Err(e) => {
+                log_message(format!("CSV export failed: {e}"));
+                None
+            }
+        }
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let save = move |_| {
+        let Some(csv) = export_csv() else { return };
+        spawn(async move {
+            let picked = rfd::AsyncFileDialog::new()
+                .add_filter("CSV", &["csv"])
+                .set_file_name("arc-strengths.csv")
+                .save_file()
+                .await;
+            let Some(fh) = picked else { return };
+            let path = fh.path().to_path_buf();
+            match std::fs::write(&path, csv) {
+                Ok(()) => log_message(format!("Exported {}.", path.display())),
+                Err(e) => log_message(format!("CSV export failed: {e}")),
+            }
+        });
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    let save = move |_| {
+        let Some(csv) = export_csv() else { return };
+        crate::platform::download("arc-strengths.csv", "text/csv", csv.as_bytes());
+        log_message("Exported arc-strengths.csv (downloaded).".to_string());
+    };
+
     rsx! {
         Modeless {
             title: "Arc strengths",
@@ -47,6 +92,12 @@ pub fn ArcStrengthDialog() -> Element {
                     disabled: !can_run,
                     onclick: run,
                     "Compute"
+                }
+                button {
+                    class: BTN_SM,
+                    disabled: live_rows.is_empty(),
+                    onclick: save,
+                    "Save CSV…"
                 }
             }
             if let Some(ref e) = *error.read() {

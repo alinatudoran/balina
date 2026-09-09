@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use bn_core::model::{Network, NodeId, NodeKind};
 use slotmap::SecondaryMap;
 
-use crate::doc::Document;
+use crate::doc::{Document, Note, NoteId};
 use crate::error::CmdError;
 
 /// Reject a stale node id (node deleted, undo rewound past its creation) as
@@ -21,6 +21,15 @@ pub fn check_node(net: &Network, id: NodeId) -> Result<(), CmdError> {
         Ok(())
     } else {
         Err(CmdError::BadRequest("node no longer exists".into()))
+    }
+}
+
+/// Same stale-id guard for sticky notes.
+pub fn check_note(notes: &slotmap::SlotMap<NoteId, Note>, id: NoteId) -> Result<(), CmdError> {
+    if notes.contains_key(id) {
+        Ok(())
+    } else {
+        Err(CmdError::BadRequest("note no longer exists".into()))
     }
 }
 

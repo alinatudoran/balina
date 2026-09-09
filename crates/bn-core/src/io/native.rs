@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::error::IoError;
-use crate::io::{Document, NodeVisual, VisualInfo};
+use crate::io::{Document, NodeVisual, NoteInfo, VisualInfo};
 use crate::model::{ContinuousInfo, Network, NodeKind, State, Table};
 
 pub const FORMAT_TAG: &str = "balina-net";
@@ -21,6 +21,8 @@ struct NetDto {
     nodes: Vec<NodeDto>,
     #[serde(default)]
     visual: HashMap<String, NodeVisual>,
+    #[serde(default)]
+    notes: Vec<NoteInfo>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -72,6 +74,7 @@ pub fn to_json(doc: &Document) -> Result<String, IoError> {
         comment: net.comment.clone(),
         nodes,
         visual: doc.visual.nodes.clone(),
+        notes: doc.visual.notes.clone(),
     };
     Ok(serde_json::to_string_pretty(&dto)?)
 }
@@ -110,5 +113,5 @@ pub fn from_json(text: &str) -> Result<Document, IoError> {
             net.node_mut(id).continuous = Some(ci);
         }
     }
-    Ok(Document { network: net, visual: VisualInfo { nodes: dto.visual } })
+    Ok(Document { network: net, visual: VisualInfo { nodes: dto.visual, notes: dto.notes } })
 }

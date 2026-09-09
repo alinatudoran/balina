@@ -198,7 +198,13 @@ fn ident(s: &str) -> String {
 
 pub fn to_xml(doc: &Document) -> Result<(String, Vec<Warning>), IoError> {
     let net = &doc.network;
-    let warnings = Vec::new();
+    let mut warnings = Vec::new();
+    if !doc.visual.notes.is_empty() {
+        warnings.push(Warning::Lossy(format!(
+            "{} note(s) omitted (XDSL cannot store notes)",
+            doc.visual.notes.len()
+        )));
+    }
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str(&format!(

@@ -13,7 +13,8 @@ use bn_session::{Document, EngineBridge};
 use crate::canvas::edge::EDGE_STROKE;
 use crate::canvas::geometry::Rect;
 use crate::canvas::node::{belief_row_display, kind_body_color, kind_header_color};
-use crate::canvas::scene::build_scene;
+use crate::canvas::scene::{build_scene, NoteOverrides};
+use crate::canvas::sticky::{note_bar_color, note_fill, note_plain_text};
 use crate::logic::format::expected_value;
 
 pub const PADDING: f64 = 24.0;
@@ -26,9 +27,10 @@ const TEXT_MONO: &str = "#262626"; // neutral-800
 const TRACK_BG: &str = "#f5f5f5"; // neutral-100
 const TRACK_BORDER: &str = "#d4d4d4"; // neutral-300
 
-/// Full-diagram SVG at committed positions. `None` when the network is empty.
+/// Full-diagram SVG at committed positions. `None` when the document has
+/// nothing to draw (no nodes and no notes).
 pub fn network_svg(doc: &Document, bridge: &EngineBridge) -> Option<String> {
-    let scene = build_scene(doc, &HashMap::new());
+    let scene = build_scene(doc, &HashMap::new(), &NoteOverrides::default());
     let b = scene.bounds()?;
     let (width, height) = (b.w + 2.0 * PADDING, b.h + 2.0 * PADDING);
 
@@ -61,8 +63,114 @@ pub fn network_svg(doc: &Document, bridge: &EngineBridge) -> Option<String> {
         write_node(&mut s, doc, bridge, n.id, n.rect);
     }
 
+    // Sticky notes last: they float in front of the network on the canvas.
+    for n in &scene.notes {
+        if let Some(note) = doc.notes.get(n.id) {
+            write_sticky(&mut s, note, n.rect);
+        }
+    }
+
     s.push_str("</g>\n</svg>\n");
     Some(s)
+}
+
+/// A sticky note: body, darker top bar, greedily word-wrapped text. Note
+/// text is markdown — exported as extracted plain text (markers dropped);
+/// rendering HTML inside SVG is not attempted. The wrap uses the same
+/// 0.55em character budget as `fit()` — close to the canvas's CSS wrap,
+/// exact parity not attempted. A collapsed note is just its bar with the
+/// first text line (the scene already gives it the bar rect).
+fn write_sticky(s: &mut String, note: &bn_session::Note, r: Rect) {
+    let fill = note_fill(note.color);
+    let bar = note_bar_color(note.color);
+    let plain = note_plain_text(&note.text);
+    if note.collapsed {
+        let first = plain.lines().next().unwrap_or("");
+        let _ = write!(
+            s,
+            "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{w:.0}\" height=\"{h:.0}\" rx=\"3\" \
+             fill=\"{bar}\" stroke=\"#000000\" stroke-opacity=\"0.15\"/>\n\
+             <text x=\"{tx:.1}\" y=\"{ty:.1}\" font-size=\"10\" fill=\"{TEXT_DARK}\">{}</text>\n",
+            esc(&fit(first, r.w - 24.0, 10.0)),
+            x = r.x,
+            y = r.y,
+            w = r.w,
+            h = r.h,
+            tx = r.x + 8.0,
+            ty = r.y + r.h / 2.0 + 0.35 * 10.0,
+        );
+        return;
+    }
+    let _ = write!(
+        s,
+        "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{w:.0}\" height=\"{h:.0}\" rx=\"3\" \
+         fill=\"{fill}\" stroke=\"#000000\" stroke-opacity=\"0.15\"/>\n\
+         <path d=\"M {sx:.1} {y:.1} H {ex:.1} A 3 3 0 0 1 {x1:.1} {ry:.1} V {by:.1} H {x:.1} \
+         V {ry:.1} A 3 3 0 0 1 {sx:.1} {y:.1} Z\" fill=\"{bar}\"/>\n",
+        x = r.x,
+        y = r.y,
+        w = r.w,
+        h = r.h,
+        sx = r.x + 3.0,
+        ex = r.x + r.w - 3.0,
+        x1 = r.x + r.w,
+        ry = r.y + 3.0,
+        by = r.y + 14.0,
+    );
+
+    let font = note.font_size as f64;
+    let line_h = font * 1.35;
+    let mut y = r.y + 14.0 + line_h; // baseline of the first line
+    for line in wrap_note_text(&plain, r.w - 16.0, font) {
+        if y > r.y + r.h - 4.0 {
+            break; // overflow is clipped on the canvas; drop it here too
+        }
+        let _ = writeln!(
+            s,
+            "<text x=\"{:.1}\" y=\"{y:.1}\" font-size=\"{font:.1}\" fill=\"{TEXT_DARK}\">{}</text>",
+            r.x + 8.0,
+            esc(&line),
+        );
+        y += line_h;
+    }
+}
+
+/// Split on newlines, then greedily wrap each paragraph on spaces to the
+/// `fit()` character budget (hard-splitting single over-budget words).
+fn wrap_note_text(text: &str, max_px: f64, font_px: f64) -> Vec<String> {
+    let budget = (max_px / (font_px * 0.55)).floor().max(1.0) as usize;
+    let mut out = Vec::new();
+    for para in text.split('\n') {
+        let mut line = String::new();
+        let mut line_len = 0usize;
+        for word in para.split(' ') {
+            let mut word = word;
+            let mut word_len = word.chars().count();
+            // Hard-split words longer than a whole line.
+            while word_len > budget {
+                if line_len > 0 {
+                    out.push(std::mem::take(&mut line));
+                    line_len = 0;
+                }
+                let cut = word.char_indices().nth(budget).map(|(i, _)| i).unwrap_or(word.len());
+                out.push(word[..cut].to_string());
+                word = &word[cut..];
+                word_len = word.chars().count();
+            }
+            let sep = if line_len > 0 { 1 } else { 0 };
+            if line_len + sep + word_len > budget {
+                out.push(std::mem::take(&mut line));
+                line_len = 0;
+            } else if sep == 1 {
+                line.push(' ');
+                line_len += 1;
+            }
+            line.push_str(word);
+            line_len += word_len;
+        }
+        out.push(line);
+    }
+    out
 }
 
 /// Mirror of `canvas::node::read_node_data`, but a pure function of the
@@ -324,6 +432,70 @@ mod tests {
         assert!(svg.contains("●"), "evidence marker");
         assert!(svg.contains(BAR_FINDING));
         assert!(svg.contains("rgb(90,90,90)"));
+    }
+
+    #[test]
+    fn notes_export_on_top_with_wrapped_escaped_text() {
+        let mut doc = Document::new();
+        doc.add_node_at(NodeKind::Chance, Point::new(0.0, 0.0)).unwrap();
+        let id = doc.add_note_at(Point::new(400.0, 0.0));
+        doc.notes[id].text = "hello <world>\nsecond".into();
+        doc.notes[id].color = [181, 220, 255];
+
+        let svg = network_svg(&doc, &EngineBridge::default()).unwrap();
+        assert!(svg.contains("rgb(181,220,255)"), "note body color");
+        assert!(svg.contains("hello &lt;world&gt;"));
+        assert!(svg.contains("second"), "newline becomes its own line");
+        // Notes are written after every node → they render on top.
+        let note_pos = svg.find("rgb(181,220,255)").unwrap();
+        let node_pos = svg.find("rgb(255,248,220)").unwrap();
+        assert!(note_pos > node_pos);
+
+        // A notes-only document is exportable.
+        let mut only = Document::new();
+        only.add_note_at(Point::new(0.0, 0.0));
+        assert!(network_svg(&only, &EngineBridge::default()).is_some());
+    }
+
+    #[test]
+    fn note_markdown_exports_as_plain_text() {
+        let mut doc = Document::new();
+        let id = doc.add_note_at(Point::new(0.0, 0.0));
+        doc.notes[id].text = "# Head\n\n* item one\n* item two".into();
+
+        let svg = network_svg(&doc, &EngineBridge::default()).unwrap();
+        assert!(svg.contains(">Head</text>"), "heading text without the # marker");
+        assert!(svg.contains(">item one</text>"), "list text without the * marker");
+        assert!(!svg.contains("# Head"));
+        assert!(!svg.contains("* item"));
+    }
+
+    #[test]
+    fn collapsed_note_exports_bar_only() {
+        let mut doc = Document::new();
+        let id = doc.add_note_at(Point::new(0.0, 0.0));
+        doc.notes[id].text = "headline\nhidden body".into();
+        doc.notes[id].collapsed = true;
+
+        let svg = network_svg(&doc, &EngineBridge::default()).unwrap();
+        assert!(svg.contains("headline"));
+        assert!(!svg.contains("hidden body"), "collapsed body text must not render");
+        // Only the darker bar fill appears, not the body fill.
+        assert!(svg.contains(&super::note_bar_color(doc.notes[id].color)));
+        assert!(!svg.contains(&super::note_fill(doc.notes[id].color)));
+    }
+
+    #[test]
+    fn note_text_wraps_greedily() {
+        // budget = 100 / (10 * 0.55) = 18 chars
+        let lines = wrap_note_text("aaa bbb ccc ddd eee fff", 100.0, 10.0);
+        assert_eq!(lines, vec!["aaa bbb ccc ddd", "eee fff"]);
+        // Over-budget single word is hard-split.
+        let lines = wrap_note_text("abcdefghijklmnopqrstuvwxyz", 100.0, 10.0);
+        assert_eq!(lines, vec!["abcdefghijklmnopqr", "stuvwxyz"]);
+        // Blank lines survive.
+        let lines = wrap_note_text("a\n\nb", 100.0, 10.0);
+        assert_eq!(lines, vec!["a", "", "b"]);
     }
 
     #[test]

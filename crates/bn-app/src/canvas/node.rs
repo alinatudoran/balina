@@ -127,23 +127,6 @@ fn read_node_data(id: NodeId) -> Option<NodeData> {
     })
 }
 
-/// World positions of the nodes a drag would move: the clicked node plus the
-/// rest of the selection (if the clicked node is part of it).
-fn drag_starts(clicked: NodeId) -> Vec<(NodeId, f64, f64)> {
-    let s = SESSION.read();
-    let sel = SELECTION.read();
-    let ids: Vec<NodeId> = if sel.nodes.contains(&clicked) {
-        sel.nodes.iter().copied().collect()
-    } else {
-        vec![clicked]
-    };
-    ids.into_iter()
-        .filter_map(|id| {
-            s.doc.visual.get(id).map(|v| (id, v.pos.x as f64, v.pos.y as f64))
-        })
-        .collect()
-}
-
 #[component]
 pub fn BnNode(id: NodeId, rect: Rect) -> Element {
     let Some(d) = read_node_data(id) else { return rsx! {} };
@@ -238,12 +221,13 @@ pub fn BnNode(id: NodeId, rect: Rect) -> Element {
                     let mut sel = SELECTION.write();
                     sel.nodes.clear();
                     sel.edges.clear();
+                    sel.notes.clear();
                     sel.nodes.insert(id);
                 }
                 let c = ev.data().client_coordinates();
-                let starts = drag_starts(id);
+                let (starts, note_starts) = controller::drag_starts(Some(id), None);
                 *GESTURE.write() =
-                    Gesture::PendingNodeDrag { start_client: (c.x, c.y), starts };
+                    Gesture::PendingNodeDrag { start_client: (c.x, c.y), starts, note_starts };
             },
 
             onmouseup: move |ev| {

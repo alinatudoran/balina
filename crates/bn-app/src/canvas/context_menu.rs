@@ -4,9 +4,11 @@
 
 use bn_core::io::DisplayMode;
 use bn_core::model::{NodeId, NodeKind};
+use bn_session::NoteId;
 use dioxus::prelude::*;
 
 use crate::canvas::controller::FIT_REQUEST;
+use crate::canvas::sticky::{note_fill, NOTE_PALETTE};
 use crate::state::{
     exec, open_dialog, ContextMenuTarget, DialogDesc, CONTEXT_MENU, SESSION,
 };
@@ -55,6 +57,9 @@ pub fn ContextMenuHost() -> Element {
                         },
                         "Delete link"
                     }
+                },
+                ContextMenuTarget::Note(id) => rsx! {
+                    NoteMenu { id }
                 },
                 ContextMenuTarget::Pane { world } => rsx! {
                     PaneMenu { world }
@@ -140,7 +145,75 @@ fn NodeMenu(id: NodeId) -> Element {
             class: ITEM_DANGER,
             onclick: move |_| {
                 close();
-                exec(|s| bn_session::ops::edit::delete_items(s, &[id], &[]));
+                exec(|s| bn_session::ops::edit::delete_items(s, &[id], &[], &[]));
+            },
+            "Delete"
+        }
+    }
+}
+
+#[component]
+fn NoteMenu(id: NoteId) -> Element {
+    let current = {
+        let s = SESSION.read();
+        let Some(n) = s.doc.notes.get(id) else { return rsx! {} };
+        n.color
+    };
+
+    let swatches: Vec<([u8; 3], &str, String)> = NOTE_PALETTE
+        .iter()
+        .map(|&(color, label)| {
+            let (bc, bw) = if color == current {
+                ("rgb(100,140,220)", "2px")
+            } else {
+                ("rgba(0,0,0,0.2)", "1px")
+            };
+            let style = format!(
+                "background: {}; border-color: {bc}; border-width: {bw};",
+                note_fill(color)
+            );
+            (color, label, style)
+        })
+        .collect();
+
+    rsx! {
+        span { class: "px-2 text-xs text-muted-foreground", "Color" }
+        div { class: "flex items-center gap-1.5 px-2 py-1.5",
+            for (color, label, style) in swatches {
+                button {
+                    class: "size-6 rounded-full border hover:scale-110",
+                    style,
+                    title: "{label}",
+                    onclick: move |_| {
+                        close();
+                        exec(|s| bn_session::ops::edit::set_note_color(s, id, color));
+                    },
+                }
+            }
+        }
+        div { class: "my-1 border-t" }
+        button {
+            class: ITEM,
+            onclick: move |_| {
+                close();
+                exec(|s| bn_session::ops::edit::nudge_note_font(s, id, -1.0));
+            },
+            "Smaller text"
+        }
+        button {
+            class: ITEM,
+            onclick: move |_| {
+                close();
+                exec(|s| bn_session::ops::edit::nudge_note_font(s, id, 1.0));
+            },
+            "Larger text"
+        }
+        div { class: "my-1 border-t" }
+        button {
+            class: ITEM_DANGER,
+            onclick: move |_| {
+                close();
+                exec(|s| bn_session::ops::edit::delete_items(s, &[], &[], &[id]));
             },
             "Delete"
         }
@@ -165,6 +238,18 @@ fn PaneMenu(world: (f64, f64)) -> Element {
                 },
                 "{label}"
             }
+        }
+        button {
+            class: ITEM,
+            onclick: move |_| {
+                close();
+                if let Some(id) =
+                    exec(|s| bn_session::ops::edit::add_note(s, world.0 as f32, world.1 as f32))
+                {
+                    crate::state::focus_new_note(id);
+                }
+            },
+            "Add note"
         }
         div { class: "my-1 border-t" }
         button {

@@ -80,7 +80,7 @@ fn add_link_delete_undo_roundtrip() {
     assert!(doc.net.would_create_cycle(b, a));
 
     // Delete node A; B's table must contract; undo restores everything.
-    bridge.mark(doc.delete_items(&[a], &[]));
+    bridge.mark(doc.delete_items(&[a], &[], &[]));
     sync(&mut bridge, &doc);
     assert_eq!(doc.net.len(), 1);
     bridge.mark(doc.undo());
@@ -198,7 +198,7 @@ fn stale_node_ids_become_bad_request() {
     let id = ops::edit::add_node(&mut s, NodeKind::Chance, 10.0, 20.0).unwrap();
     assert!(views::check_node(&s.doc.net, id).is_ok());
     // Delete the node; the retained id must fail cleanly, never panic.
-    ops::edit::delete_items(&mut s, &[id], &[]).unwrap();
+    ops::edit::delete_items(&mut s, &[id], &[], &[]).unwrap();
     assert!(s.doc.net.is_empty());
     assert!(matches!(
         ops::evidence::toggle_finding(&mut s, id, 0),
@@ -401,4 +401,81 @@ fn id_solution_sensitivity_and_ancestors() {
     let sat = s.doc.net.find_by_name("Satisfaction").unwrap();
     assert!(anc[sat].contains(&weather), "Weather is an ancestor of Satisfaction");
     assert!(anc[weather].is_empty());
+}
+
+// ---- sticky notes ----------------------------------------------------------
+
+#[test]
+fn note_ops_undo_and_stale_ids() {
+    let mut s = Session::new();
+    let seq0 = s.doc.change_seq;
+
+    // Add + edit: visual-only, so change_seq never moves.
+    let id = ops::edit::add_note(&mut s, 30.0, 40.0).unwrap();
+    ops::edit::set_note_text(&mut s, id, "hello".into()).unwrap();
+    ops::edit::set_note_color(&mut s, id, [181, 220, 255]).unwrap();
+    ops::edit::move_items(&mut s, &[], &[(id, 5.0, 6.0)]).unwrap();
+    assert_eq!(s.doc.change_seq, seq0);
+    assert_eq!(s.doc.notes[id].text, "hello");
+    assert_eq!(s.doc.notes[id].pos, Point::new(5.0, 6.0));
+
+    // Clamps.
+    ops::edit::resize_note(&mut s, id, 1.0, 1.0).unwrap();
+    assert_eq!((s.doc.notes[id].w, s.doc.notes[id].h), crate::doc::NOTE_MIN_SIZE);
+    ops::edit::nudge_note_font(&mut s, id, 1000.0).unwrap();
+    assert_eq!(s.doc.notes[id].font_size, crate::doc::NOTE_FONT_RANGE.1);
+
+    // Collapse keeps the expanded size; still no change_seq movement.
+    ops::edit::set_note_collapsed(&mut s, id, true).unwrap();
+    assert!(s.doc.notes[id].collapsed);
+    assert_eq!((s.doc.notes[id].w, s.doc.notes[id].h), crate::doc::NOTE_MIN_SIZE);
+    assert_eq!(s.doc.change_seq, seq0);
+    // Setting the same state is a no-op: one undo reverts the real toggle.
+    ops::edit::set_note_collapsed(&mut s, id, true).unwrap();
+    ops::edit::undo(&mut s);
+    assert!(!s.doc.notes[id].collapsed);
+    ops::edit::redo(&mut s);
+    assert!(s.doc.notes[id].collapsed);
+    ops::edit::set_note_collapsed(&mut s, id, false).unwrap();
+    // Undo/redo themselves bump change_seq (any undo may touch the model) —
+    // re-baseline before the notes-only-delete check below.
+    let seq0 = s.doc.change_seq;
+
+    // Notes-only delete: no change_seq bump; undo restores the note.
+    ops::edit::delete_items(&mut s, &[], &[], &[id]).unwrap();
+    assert_eq!(s.doc.change_seq, seq0);
+    assert!(s.doc.notes.is_empty());
+    assert!(matches!(
+        ops::edit::set_note_text(&mut s, id, "x".into()),
+        Err(CmdError::BadRequest(_))
+    ));
+    ops::edit::undo(&mut s);
+    assert_eq!(s.doc.notes[id].text, "hello");
+}
+
+#[test]
+fn unchanged_note_text_is_not_an_undo_step() {
+    let mut s = Session::new();
+    let id = ops::edit::add_note(&mut s, 0.0, 0.0).unwrap();
+    ops::edit::set_note_text(&mut s, id, "hello".into()).unwrap();
+    ops::edit::set_note_text(&mut s, id, "hello".into()).unwrap(); // no-op
+    // One undo must revert the ORIGINAL text edit, not a phantom no-op step.
+    ops::edit::undo(&mut s);
+    assert_eq!(s.doc.notes[id].text, "");
+}
+
+#[test]
+fn notes_roundtrip_through_io_document() {
+    let mut s = Session::new();
+    let id = ops::edit::add_note(&mut s, 12.0, 34.0).unwrap();
+    ops::edit::set_note_text(&mut s, id, "line1\nline2".into()).unwrap();
+    ops::edit::resize_note(&mut s, id, 240.0, 130.0).unwrap();
+    ops::edit::nudge_note_font(&mut s, id, 4.0).unwrap();
+    ops::edit::set_note_collapsed(&mut s, id, true).unwrap();
+
+    let iodoc = s.doc.to_io_document();
+    let back = Document::from_io_document(iodoc, None);
+    assert_eq!(back.notes.len(), 1);
+    let n = back.notes.values().next().unwrap();
+    assert_eq!(*n, s.doc.notes[id]);
 }
