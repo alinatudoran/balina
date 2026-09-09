@@ -8,7 +8,13 @@ use std::path::PathBuf;
 use bn_core::inference::{Evidence, Finding};
 use bn_core::io::{self, DisplayMode};
 use bn_core::model::{Network, NodeId, NodeKind, State};
-use slotmap::SecondaryMap;
+use slotmap::{SecondaryMap, SlotMap};
+
+slotmap::new_key_type! {
+    /// Key for sticky notes. Like `NodeId`, it does NOT survive
+    /// serialization — notes are reallocated fresh keys on load.
+    pub struct NoteId;
+}
 
 /// World-coordinate position (replaces egui's Pos2).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -36,6 +42,42 @@ impl Default for NodeVisual {
     }
 }
 
+pub const NOTE_DEFAULT_SIZE: (f32, f32) = (200.0, 150.0);
+pub const NOTE_MIN_SIZE: (f32, f32) = (80.0, 50.0);
+/// Height of a collapsed note: just the title bar (macOS-Stickies style).
+pub const NOTE_COLLAPSED_H: f32 = 24.0;
+pub const NOTE_DEFAULT_COLOR: [u8; 3] = [255, 244, 165]; // sticky yellow
+pub const NOTE_FONT_DEFAULT: f32 = 13.0;
+pub const NOTE_FONT_RANGE: (f32, f32) = (8.0, 32.0);
+
+/// A sticky note on the canvas. Pure annotation: lives outside the network,
+/// so it can never affect inference or learning.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Note {
+    pub text: String,
+    pub pos: Point,
+    pub w: f32,
+    pub h: f32,
+    pub color: [u8; 3],
+    pub font_size: f32,
+    /// Collapsed to just the title bar; `w`/`h` keep the expanded size.
+    pub collapsed: bool,
+}
+
+impl Default for Note {
+    fn default() -> Self {
+        Note {
+            text: String::new(),
+            pos: Point::default(),
+            w: NOTE_DEFAULT_SIZE.0,
+            h: NOTE_DEFAULT_SIZE.1,
+            color: NOTE_DEFAULT_COLOR,
+            font_size: NOTE_FONT_DEFAULT,
+            collapsed: false,
+        }
+    }
+}
+
 /// What a change invalidates in the inference engine.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub enum Dirt {
@@ -56,12 +98,14 @@ impl Dirt {
 struct Snapshot {
     net: Network,
     visual: SecondaryMap<NodeId, NodeVisual>,
+    notes: SlotMap<NoteId, Note>,
     evidence: Evidence,
 }
 
 pub struct Document {
     pub net: Network,
     pub visual: SecondaryMap<NodeId, NodeVisual>,
+    pub notes: SlotMap<NoteId, Note>,
     pub evidence: Evidence,
     pub auto_update: bool,
     pub path: Option<PathBuf>,
@@ -87,6 +131,7 @@ impl Document {
         Document {
             net: Network::new("Untitled"),
             visual: SecondaryMap::new(),
+            notes: SlotMap::with_key(),
             evidence: Evidence::new(),
             auto_update: true,
             path: None,
@@ -103,6 +148,7 @@ impl Document {
         Snapshot {
             net: self.net.clone(),
             visual: self.visual.clone(),
+            notes: self.notes.clone(),
             evidence: self.evidence.clone(),
         }
     }
@@ -159,6 +205,7 @@ impl Document {
     fn restore(&mut self, s: Snapshot) {
         self.net = s.net;
         self.visual = s.visual;
+        self.notes = s.notes;
         self.evidence = s.evidence;
         self.modified = true;
     }
@@ -205,6 +252,12 @@ impl Document {
         Ok(id)
     }
 
+    /// Add a sticky note. Visual-only: undoable but no `change_seq` bump.
+    pub fn add_note_at(&mut self, pos: Point) -> NoteId {
+        self.begin_visual_change();
+        self.notes.insert(Note { pos, ..Default::default() })
+    }
+
     /// Give any node missing a visual (e.g. created by CSV import) a default
     /// grid position below the existing layout. Caller has begin_change()'d.
     pub fn ensure_visuals(&mut self) {
@@ -228,14 +281,26 @@ impl Document {
         }
     }
 
-    /// Delete edges first, then nodes (retracting their evidence); one
-    /// undoable step. Replaces the egui app's selection-based deletion —
-    /// selection now lives in the frontend.
-    pub fn delete_items(&mut self, nodes: &[NodeId], edges: &[(NodeId, NodeId)]) -> Dirt {
-        if nodes.is_empty() && edges.is_empty() {
+    /// Delete edges first, then nodes (retracting their evidence), then
+    /// notes; one undoable step. Replaces the egui app's selection-based
+    /// deletion — selection now lives in the frontend. A notes-only delete
+    /// is a visual change (no `change_seq` bump, nothing to recompute).
+    pub fn delete_items(
+        &mut self,
+        nodes: &[NodeId],
+        edges: &[(NodeId, NodeId)],
+        notes: &[NoteId],
+    ) -> Dirt {
+        if nodes.is_empty() && edges.is_empty() && notes.is_empty() {
             return Dirt::None;
         }
-        self.begin_change();
+        let dirt = if nodes.is_empty() && edges.is_empty() {
+            self.begin_visual_change();
+            Dirt::None
+        } else {
+            self.begin_change();
+            Dirt::Structure
+        };
         for &(a, b) in edges {
             let _ = self.net.remove_edge(a, b);
         }
@@ -243,7 +308,10 @@ impl Document {
             self.evidence.retract(id);
             self.net.remove_node(id);
         }
-        Dirt::Structure
+        for &id in notes {
+            self.notes.remove(id);
+        }
+        dirt
     }
 
     pub fn toggle_finding(&mut self, node: NodeId, state: usize) -> Dirt {
@@ -288,6 +356,18 @@ impl Document {
                 );
             }
         }
+        for n in self.notes.values() {
+            visual.notes.push(io::NoteInfo {
+                text: n.text.clone(),
+                x: n.pos.x,
+                y: n.pos.y,
+                w: n.w,
+                h: n.h,
+                color: n.color,
+                font_size: n.font_size,
+                collapsed: n.collapsed,
+            });
+        }
         io::Document { network: self.net.clone(), visual }
     }
 
@@ -327,6 +407,17 @@ impl Document {
                 },
             };
             doc.visual.insert(id, v);
+        }
+        for n in &iodoc.visual.notes {
+            doc.notes.insert(Note {
+                text: n.text.clone(),
+                pos: Point::new(n.x, n.y),
+                w: n.w.max(NOTE_MIN_SIZE.0),
+                h: n.h.max(NOTE_MIN_SIZE.1),
+                color: n.color,
+                font_size: n.font_size.clamp(NOTE_FONT_RANGE.0, NOTE_FONT_RANGE.1),
+                collapsed: n.collapsed,
+            });
         }
         doc
     }

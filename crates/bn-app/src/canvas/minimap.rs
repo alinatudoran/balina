@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use crate::canvas::controller::VIEWPORT;
 use crate::canvas::node::kind_header_color;
 use crate::canvas::scene::Scene;
+use crate::canvas::sticky::note_fill;
 use crate::state::SESSION;
 
 const MINI_W: f64 = 140.0;
@@ -42,6 +43,20 @@ pub fn Minimap(scene: Scene) -> Element {
             .collect()
     };
 
+    // Notes join the bounds, so draw them too (faint, under the node rects).
+    let note_rects: Vec<(f64, f64, f64, f64, String)> = {
+        let s = SESSION.read();
+        scene
+            .notes
+            .iter()
+            .filter_map(|n| {
+                let note = s.doc.notes.get(n.id)?;
+                let (x, y) = to_mini(n.rect.x, n.rect.y);
+                Some((x, y, n.rect.w * scale, n.rect.h * scale, note_fill(note.color)))
+            })
+            .collect()
+    };
+
     rsx! {
         div {
             class: "absolute right-3 bottom-3 overflow-hidden rounded-md border \
@@ -60,6 +75,19 @@ pub fn Minimap(scene: Scene) -> Element {
                 );
             },
             svg { width: "{MINI_W}", height: "{MINI_H}",
+                for (x, y, w, h, color) in note_rects {
+                    rect {
+                        x: "{x:.1}",
+                        y: "{y:.1}",
+                        width: "{w.max(2.0):.1}",
+                        height: "{h.max(2.0):.1}",
+                        rx: "1.5",
+                        fill: "{color}",
+                        "fill-opacity": "0.6",
+                        stroke: "rgba(0,0,0,0.15)",
+                        "stroke-width": "0.5",
+                    }
+                }
                 for (x, y, w, h, color) in kinds {
                     rect {
                         x: "{x:.1}",

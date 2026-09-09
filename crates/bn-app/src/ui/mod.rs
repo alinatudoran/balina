@@ -204,21 +204,56 @@ pub fn NumberInput(
     }
 }
 
+/// Multi-line input maintaining the TYPING flag. `unstyled` drops the boxed
+/// look (border/background/shadow) for hosts that provide their own — merely
+/// appending overriding classes does not work (equal CSS specificity, the
+/// stylesheet order wins). `onblur` fires AFTER the TYPING flag clears.
 #[component]
 pub fn TextArea(
     value: String,
     oninput: EventHandler<String>,
     #[props(default = 2)] rows: i64,
     #[props(default = String::new())] class: String,
+    #[props(default = String::new())] style: String,
+    #[props(default = false)] unstyled: bool,
+    #[props(default = false)] autofocus: bool,
+    #[props(optional)] onblur: Option<EventHandler<()>>,
+    #[props(optional)] onkeydown: Option<EventHandler<KeyboardEvent>>,
 ) -> Element {
+    let base = if unstyled {
+        "outline-none"
+    } else {
+        "w-full rounded-md border bg-background px-2 py-1 text-sm shadow-xs \
+         outline-none focus:ring-2 focus:ring-ring/50"
+    };
     rsx! {
         textarea {
-            class: "w-full rounded-md border bg-background px-2 py-1 text-sm shadow-xs \
-                    outline-none focus:ring-2 focus:ring-ring/50 {class}",
+            class: "{base} {class}",
+            style,
             rows: "{rows}",
             value: "{value}",
+            autofocus,
+            // The `autofocus` attribute is ignored for dynamically inserted
+            // elements (WKWebView) — focus explicitly on mount instead.
+            onmounted: move |ev| {
+                if autofocus {
+                    spawn(async move {
+                        let _ = ev.data().set_focus(true).await;
+                    });
+                }
+            },
             onfocus: move |_| *TYPING.write() = true,
-            onblur: move |_| *TYPING.write() = false,
+            onblur: move |_| {
+                *TYPING.write() = false;
+                if let Some(cb) = &onblur {
+                    cb.call(());
+                }
+            },
+            onkeydown: move |ev| {
+                if let Some(cb) = &onkeydown {
+                    cb.call(ev);
+                }
+            },
             oninput: move |ev| oninput.call(ev.value()),
         }
     }

@@ -18,7 +18,10 @@ pub mod views;
 #[cfg(test)]
 mod smoke_tests;
 
-pub use doc::{Dirt, Document, NodeVisual, Point};
+pub use doc::{
+    Dirt, Document, NodeVisual, Note, NoteId, Point, NOTE_COLLAPSED_H, NOTE_DEFAULT_SIZE,
+    NOTE_FONT_RANGE, NOTE_MIN_SIZE,
+};
 pub use engine_bridge::EngineBridge;
 pub use error::CmdError;
 pub use session::Session;

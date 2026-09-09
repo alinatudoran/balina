@@ -4,38 +4,58 @@
 use bn_core::model::NodeKind;
 use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
-use icons::{Diamond, Dices, SquareSplitVertical};
+use icons::{Diamond, Dices, SquareSplitVertical, StickyNote};
 
 use crate::canvas::canvas::default_node_footprint;
-use crate::canvas::controller::{self, Gesture, FIT_REQUEST, GESTURE, VIEWPORT};
+use crate::canvas::controller::{self, Gesture, PaletteItem, FIT_REQUEST, GESTURE, VIEWPORT};
 use crate::state::{exec, SESSION};
 
 const BTN: &str = "inline-flex h-7 cursor-default items-center gap-1 rounded-md border \
                    bg-background px-2 text-xs shadow-xs hover:bg-accent";
 
-pub const PALETTE: [(NodeKind, &str); 3] = [
-    (NodeKind::Chance, "Chance"),
-    (NodeKind::Decision, "Decision"),
-    (NodeKind::Utility, "Utility"),
+pub const PALETTE: [(PaletteItem, &str); 4] = [
+    (PaletteItem::Node(NodeKind::Chance), "Chance"),
+    (PaletteItem::Node(NodeKind::Decision), "Decision"),
+    (PaletteItem::Node(NodeKind::Utility), "Utility"),
+    (PaletteItem::Note, "Note"),
 ];
 
-fn palette_icon(kind: NodeKind) -> Element {
+fn palette_icon(item: PaletteItem) -> Element {
     let class = Some("size-3.5".to_string());
-    match kind {
-        NodeKind::Chance => rsx! { Dices { class } },
-        NodeKind::Decision => rsx! { SquareSplitVertical { class } },
-        NodeKind::Utility => rsx! { Diamond { class } },
+    match item {
+        PaletteItem::Node(NodeKind::Chance) => rsx! { Dices { class } },
+        PaletteItem::Node(NodeKind::Decision) => rsx! { SquareSplitVertical { class } },
+        PaletteItem::Node(NodeKind::Utility) => rsx! { Diamond { class } },
+        PaletteItem::Note => rsx! { StickyNote { class } },
     }
 }
 
-/// Add a node of `kind` centered in the current view.
-pub fn add_at_center(kind: NodeKind) {
+/// Footprint used to center palette drops before the item exists.
+pub fn palette_footprint(item: PaletteItem) -> (f64, f64) {
+    match item {
+        PaletteItem::Node(kind) => default_node_footprint(kind),
+        PaletteItem::Note => {
+            (bn_session::NOTE_DEFAULT_SIZE.0 as f64, bn_session::NOTE_DEFAULT_SIZE.1 as f64)
+        }
+    }
+}
+
+/// Add a palette item centered in the current view.
+pub fn add_at_center(item: PaletteItem) {
     let vp = *VIEWPORT.read();
     let c = vp.element_to_world(vp.size.0 / 2.0, vp.size.1 / 2.0);
-    let (w, h) = default_node_footprint(kind);
-    exec(|s| {
-        bn_session::ops::edit::add_node(s, kind, (c.x - w / 2.0) as f32, (c.y - h / 2.0) as f32)
-    });
+    let (w, h) = palette_footprint(item);
+    let (x, y) = ((c.x - w / 2.0) as f32, (c.y - h / 2.0) as f32);
+    match item {
+        PaletteItem::Node(kind) => {
+            exec(|s| bn_session::ops::edit::add_node(s, kind, x, y));
+        }
+        PaletteItem::Note => {
+            if let Some(id) = exec(|s| bn_session::ops::edit::add_note(s, x, y)) {
+                crate::state::focus_new_note(id);
+            }
+        }
+    }
 }
 
 #[component]
@@ -46,7 +66,7 @@ pub fn Toolbar() -> Element {
     rsx! {
         div { class: "flex shrink-0 items-center gap-2 border-b px-2 py-1",
             span { class: "text-xs text-muted-foreground", "Add:" }
-            for (kind, label) in PALETTE {
+            for (item, label) in PALETTE {
                 button {
                     class: "{BTN} cursor-grab",
                     title: "Click to add at view center, or drag onto the canvas",
@@ -57,12 +77,12 @@ pub fn Toolbar() -> Element {
                         ev.stop_propagation();
                         let c = ev.data().client_coordinates();
                         *GESTURE.write() = Gesture::PaletteDrag {
-                            kind,
+                            item,
                             start_client: (c.x, c.y),
                             cur_client: (c.x, c.y),
                         };
                     },
-                    {palette_icon(kind)}
+                    {palette_icon(item)}
                     "{label}"
                 }
             }

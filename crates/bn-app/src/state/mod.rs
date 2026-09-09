@@ -13,7 +13,7 @@
 use std::collections::HashSet;
 
 use bn_core::model::NodeId;
-use bn_session::{CmdError, Session};
+use bn_session::{CmdError, NoteId, Session};
 use dioxus::prelude::*;
 
 pub static SESSION: GlobalSignal<Session> = Signal::global(Session::new);
@@ -24,19 +24,38 @@ pub struct Selection {
     pub nodes: HashSet<NodeId>,
     /// Edges as (parent, child).
     pub edges: HashSet<(NodeId, NodeId)>,
+    /// Sticky notes.
+    pub notes: HashSet<NoteId>,
 }
 
 impl Selection {
     pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty() && self.edges.is_empty()
+        self.nodes.is_empty() && self.edges.is_empty() && self.notes.is_empty()
     }
 }
 
 pub static SELECTION: GlobalSignal<Selection> = Signal::global(Selection::default);
 
+/// The sticky note whose text is being edited inline (single slot).
+pub static EDITING_NOTE: GlobalSignal<Option<NoteId>> = Signal::global(|| None);
+
+/// Select a freshly added note and open its inline editor (Stickies-style:
+/// a new note is immediately ready to type into).
+pub fn focus_new_note(id: NoteId) {
+    *SELECTION.write() =
+        Selection { notes: HashSet::from([id]), ..Default::default() };
+    *EDITING_NOTE.write() = Some(id);
+}
+
 pub fn select_all() {
-    let ids: HashSet<NodeId> = SESSION.read().doc.net.node_ids().into_iter().collect();
-    *SELECTION.write() = Selection { nodes: ids, edges: HashSet::new() };
+    let (ids, note_ids) = {
+        let s = SESSION.read();
+        (
+            s.doc.net.node_ids().into_iter().collect::<HashSet<NodeId>>(),
+            s.doc.notes.keys().collect::<HashSet<NoteId>>(),
+        )
+    };
+    *SELECTION.write() = Selection { nodes: ids, edges: HashSet::new(), notes: note_ids };
 }
 
 pub fn clear_selection() {
@@ -48,7 +67,14 @@ pub fn clear_selection() {
 
 /// Drop selected items that no longer exist (after undo/delete/learning).
 pub fn prune_selection() {
-    let (live_nodes, live_edges) = {
+    // An undo can remove the note being edited — drop the editor with it.
+    let stale_edit = EDITING_NOTE
+        .read()
+        .is_some_and(|id| !SESSION.read().doc.notes.contains_key(id));
+    if stale_edit {
+        *EDITING_NOTE.write() = None;
+    }
+    let (live_nodes, live_edges, live_notes) = {
         let s = SESSION.read();
         let sel = SELECTION.read();
         let live_nodes: HashSet<NodeId> =
@@ -56,18 +82,23 @@ pub fn prune_selection() {
         let edges = s.doc.net.edges();
         let live_edges: HashSet<(NodeId, NodeId)> =
             sel.edges.iter().copied().filter(|e| edges.contains(e)).collect();
-        if live_nodes.len() == sel.nodes.len() && live_edges.len() == sel.edges.len() {
+        let live_notes: HashSet<NoteId> =
+            sel.notes.iter().copied().filter(|&id| s.doc.notes.contains_key(id)).collect();
+        if live_nodes.len() == sel.nodes.len()
+            && live_edges.len() == sel.edges.len()
+            && live_notes.len() == sel.notes.len()
+        {
             return; // nothing stale; avoid a pointless signal write
         }
-        (live_nodes, live_edges)
+        (live_nodes, live_edges, live_notes)
     };
-    *SELECTION.write() = Selection { nodes: live_nodes, edges: live_edges };
+    *SELECTION.write() = Selection { nodes: live_nodes, edges: live_edges, notes: live_notes };
 }
 
 /// Delete the current selection as one op (menu item, Delete hotkey).
 pub fn delete_selection() {
     prune_selection();
-    let (nodes, edges) = {
+    let (nodes, edges, notes) = {
         let sel = SELECTION.read();
         if sel.is_empty() {
             return;
@@ -75,10 +106,11 @@ pub fn delete_selection() {
         (
             sel.nodes.iter().copied().collect::<Vec<_>>(),
             sel.edges.iter().copied().collect::<Vec<_>>(),
+            sel.notes.iter().copied().collect::<Vec<_>>(),
         )
     };
     clear_selection();
-    exec(|s| bn_session::ops::edit::delete_items(s, &nodes, &edges));
+    exec(|s| bn_session::ops::edit::delete_items(s, &nodes, &edges, &notes));
 }
 
 /// Message log (cap 300, matching the React store).
@@ -100,6 +132,8 @@ pub enum ContextMenuTarget {
     Node(NodeId),
     /// (parent, child).
     Edge(NodeId, NodeId),
+    /// Sticky note.
+    Note(NoteId),
     /// Pane click, with the world coordinates under the cursor.
     Pane { world: (f64, f64) },
 }

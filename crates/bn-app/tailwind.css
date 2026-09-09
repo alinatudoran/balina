@@ -54,6 +54,83 @@
   --color-ring: var(--ring);
 }
 
+/* Sticky-note markdown body (canvas/sticky.rs renders CommonMark via
+   dangerous_inner_html). Everything is em-based so the per-note font size
+   (context menu A− / A+) scales the whole layout; Tailwind's preflight
+   strips list markers and heading styles, so they're restored here at
+   post-it scale. */
+.note-md {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.note-md p,
+.note-md ul,
+.note-md ol,
+.note-md blockquote,
+.note-md pre {
+  margin: 0 0 0.4em 0;
+}
+.note-md > :last-child {
+  margin-bottom: 0;
+}
+.note-md h1,
+.note-md h2,
+.note-md h3,
+.note-md h4,
+.note-md h5,
+.note-md h6 {
+  font-weight: 600;
+  margin: 0.2em 0;
+}
+.note-md h1 {
+  font-size: 1.3em;
+}
+.note-md h2 {
+  font-size: 1.2em;
+}
+.note-md h3 {
+  font-size: 1.1em;
+}
+.note-md ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.note-md ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+.note-md code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: rgb(0 0 0 / 0.07);
+  padding: 0 0.15em;
+  border-radius: 2px;
+}
+.note-md pre {
+  background: rgb(0 0 0 / 0.07);
+  padding: 0.3em 0.4em;
+  border-radius: 3px;
+  overflow-x: auto;
+}
+.note-md pre code {
+  background: none;
+  padding: 0;
+}
+.note-md blockquote {
+  border-left: 2px solid rgb(0 0 0 / 0.25);
+  padding-left: 0.5em;
+  color: rgb(0 0 0 / 0.7);
+}
+.note-md hr {
+  border: 0;
+  border-top: 1px solid rgb(0 0 0 / 0.25);
+  margin: 0.4em 0;
+}
+.note-md a {
+  text-decoration: underline;
+  color: rgb(29 78 166);
+}
+
 /* Web build only: restyle rfd's wasm file-open card (bare <input type=file>
    + Ok/Cancel over an overlay, DOM built in rfd's backend/wasm.rs) to match
    the app's Modal and button styles. rfd appends its own <style> to the

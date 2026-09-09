@@ -30,10 +30,37 @@ pub struct NodeVisual {
     pub color: Option<[u8; 3]>,
 }
 
+/// A free-floating sticky note on the canvas. Pure annotation: not tied to
+/// any node and never part of the network model.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NoteInfo {
+    #[serde(default)]
+    pub text: String,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    #[serde(default = "default_note_color")]
+    pub color: [u8; 3],
+    #[serde(default = "default_note_font")]
+    pub font_size: f32,
+    #[serde(default)]
+    pub collapsed: bool,
+}
+
+fn default_note_color() -> [u8; 3] {
+    [255, 244, 165] // sticky yellow
+}
+fn default_note_font() -> f32 {
+    13.0
+}
+
 /// Layout metadata, keyed by node name (stable across sessions).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct VisualInfo {
     pub nodes: HashMap<String, NodeVisual>,
+    #[serde(default)]
+    pub notes: Vec<NoteInfo>,
 }
 
 #[derive(Clone, Debug, Default)]

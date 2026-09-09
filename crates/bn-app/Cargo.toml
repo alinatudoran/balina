@@ -1,6 +1,6 @@
 [package]
 name = "bn-app"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 license = "MIT"
 
@@ -23,6 +23,7 @@ bn-core = { path = "../bn-core" }
 bn-session = { path = "../bn-session" }
 dioxus = { version = "0.7" }
 icons = { version = "0.18", features = ["dioxus"] }
+markdown = "1.0"
 rfd = "0.15" # native pickers on desktop; <input type=file> open picker on wasm
 slotmap = "1.1"
 
