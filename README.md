@@ -4,6 +4,17 @@ Bayesian And Logical Influence-diagram Network Application
 
 ![screenshot](demo/screenshot.png)
 
+
+
+## Live demos
+
+Demos available for the WebAssembly version:
+
+- [Chest Clinic](https://alinatudoran.github.io/balina?file=https://raw.githubusercontent.com/alinatudoran/balina/refs/heads/master/examples/asia.balina)
+- [Umbrella (Decision & Utility nodes are used)](https://alinatudoran.github.io/balina/?file=https://raw.githubusercontent.com/alinatudoran/balina/refs/heads/master/examples/umbrella.balina)
+
+
+
 ## Features
 
 **Editor**
