@@ -10,11 +10,13 @@
 //! holding a `.read()` guard on the same signal — copy the `NodeId`s out
 //! first. `SESSION.write()` guards must never live across an `.await`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use bn_core::model::NodeId;
-use bn_session::{CmdError, NoteId, Session};
+use bn_session::{CmdError, NoteId, Session, TabId};
 use dioxus::prelude::*;
+
+use crate::canvas::geometry::Viewport;
 
 pub static SESSION: GlobalSignal<Session> = Signal::global(Session::new);
 
@@ -51,8 +53,8 @@ pub fn select_all() {
     let (ids, note_ids) = {
         let s = SESSION.read();
         (
-            s.doc.net.node_ids().into_iter().collect::<HashSet<NodeId>>(),
-            s.doc.notes.keys().collect::<HashSet<NoteId>>(),
+            s.doc().net.node_ids().into_iter().collect::<HashSet<NodeId>>(),
+            s.doc().notes.keys().collect::<HashSet<NoteId>>(),
         )
     };
     *SELECTION.write() = Selection { nodes: ids, edges: HashSet::new(), notes: note_ids };
@@ -70,7 +72,7 @@ pub fn prune_selection() {
     // An undo can remove the note being edited — drop the editor with it.
     let stale_edit = EDITING_NOTE
         .read()
-        .is_some_and(|id| !SESSION.read().doc.notes.contains_key(id));
+        .is_some_and(|id| !SESSION.read().doc().notes.contains_key(id));
     if stale_edit {
         *EDITING_NOTE.write() = None;
     }
@@ -78,12 +80,12 @@ pub fn prune_selection() {
         let s = SESSION.read();
         let sel = SELECTION.read();
         let live_nodes: HashSet<NodeId> =
-            sel.nodes.iter().copied().filter(|&id| s.doc.net.contains(id)).collect();
-        let edges = s.doc.net.edges();
+            sel.nodes.iter().copied().filter(|&id| s.doc().net.contains(id)).collect();
+        let edges = s.doc().net.edges();
         let live_edges: HashSet<(NodeId, NodeId)> =
             sel.edges.iter().copied().filter(|e| edges.contains(e)).collect();
         let live_notes: HashSet<NoteId> =
-            sel.notes.iter().copied().filter(|&id| s.doc.notes.contains_key(id)).collect();
+            sel.notes.iter().copied().filter(|&id| s.doc().notes.contains_key(id)).collect();
         if live_nodes.len() == sel.nodes.len()
             && live_edges.len() == sel.edges.len()
             && live_notes.len() == sel.notes.len()
@@ -145,6 +147,18 @@ pub struct ContextMenuState {
     pub client: (f64, f64),
 }
 
+/// Per-tab transient view state (viewport, selection, editing note) — stored
+/// separately from Session so UI-only state doesn't leak into the session crate.
+#[derive(Clone)]
+pub struct TabViewState {
+    pub viewport: Viewport,
+    pub selection: Selection,
+    pub editing_note: Option<NoteId>,
+}
+
+pub static TAB_VIEW_STATES: GlobalSignal<HashMap<TabId, TabViewState>> =
+    Signal::global(HashMap::new);
+
 /// Last case file picked by the learn dialogs (its directory pre-fills the
 /// next picker on desktop; the handle stays readable on web).
 pub static LAST_CASE_FILE: GlobalSignal<Option<crate::platform::CaseFile>> =
@@ -166,6 +180,7 @@ pub enum DialogDesc {
     ArcStrength,
     IdSolution { text: String },
     RenameNetwork,
+    RenameTab { id: bn_session::TabId },
     About,
     /// Web only: filename + format picker for the save-as-download flow.
     #[cfg(target_arch = "wasm32")]

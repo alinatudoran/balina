@@ -99,6 +99,10 @@ pub fn build() -> Menu {
     let network = Submenu::new("&Network", true);
     network
         .append_items(&[
+            &item_accel("tab.new", "New Tab", "CmdOrCtrl+T"),
+            &item_accel("tab.close", "Close Tab", "CmdOrCtrl+W"),
+            &item("tab.duplicate", "Duplicate Tab"),
+            &PredefinedMenuItem::separator(),
             &item_accel("network.compile", "Compile Now", "F5"),
             &auto_update,
             &PredefinedMenuItem::separator(),
@@ -226,7 +230,7 @@ pub fn route(id: &str) {
             });
         }
         "network.autoUpdate" => {
-            let on = !SESSION.read().doc.auto_update;
+            let on = !SESSION.read().doc().auto_update;
             exec(|s| {
                 bn_session::ops::edit::set_auto_update(s, on);
                 Ok(())
@@ -249,6 +253,32 @@ pub fn route(id: &str) {
             if let Some(sol) = exec(|s| bn_session::ops::tools::solve_influence_diagram(s)) {
                 open_dialog(DialogDesc::IdSolution { text: sol.text });
             }
+        }
+        "tab.new" => {
+            crate::chrome::tab_bar::add_new_tab();
+        }
+        "tab.close" => {
+            let id = SESSION.read().active_id();
+            crate::chrome::tab_bar::close_tab(id);
+        }
+        "tab.next" | "tab.prev" => {
+            let s = SESSION.read();
+            let order = s.tab_order();
+            let active = s.active_id();
+            if order.len() > 1 {
+                let pos = order.iter().position(|&id| id == active).unwrap_or(0);
+                let next = if id == "tab.next" {
+                    order[(pos + 1) % order.len()]
+                } else {
+                    order[(pos + order.len() - 1) % order.len()]
+                };
+                drop(s);
+                crate::chrome::tab_bar::switch_to_tab(next);
+            }
+        }
+        "tab.duplicate" => {
+            let id = SESSION.read().active_id();
+            crate::chrome::tab_bar::duplicate_tab(id);
         }
         "help.about" => open_dialog(DialogDesc::About),
         _ => {

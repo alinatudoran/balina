@@ -30,7 +30,7 @@ fn with_filters(mut d: rfd::AsyncFileDialog, filters: &[(&str, &[&str])]) -> rfd
 
 /// True to proceed (document unmodified, or the user confirmed discarding).
 pub(crate) async fn confirm_discard(action: &str) -> bool {
-    if !SESSION.read().doc.modified {
+    if !SESSION.read().modified {
         return true;
     }
     crate::platform::confirm(
@@ -87,11 +87,11 @@ pub fn open_path(path: PathBuf) {
         crate::chrome::recent::add(&recent);
         crate::state::clear_selection();
         *crate::canvas::controller::FIT_REQUEST.write() += 1;
-        let auto = SESSION.read().doc.auto_update;
+        let auto = SESSION.read().doc().auto_update;
         crate::chrome::menu::sync_auto_update_item(auto);
         let (name, n) = {
             let s = SESSION.read();
-            (s.doc.net.name.clone(), s.doc.net.len())
+            (s.doc().net.name.clone(), s.doc().net.len())
         };
         log_message(format!("Loaded `{name}` ({n} nodes)."));
     }
@@ -101,7 +101,7 @@ pub fn file_save(save_as: bool) {
     spawn(async move {
         let (has_path, name) = {
             let s = SESSION.read();
-            (s.doc.path.is_some(), s.doc.net.name.clone())
+            (s.path.is_some(), s.doc().net.name.clone())
         };
         let mut path: Option<PathBuf> = None;
         if save_as || !has_path {

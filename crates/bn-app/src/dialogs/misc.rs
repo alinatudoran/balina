@@ -2,6 +2,7 @@
 //! rename, about.
 
 use bn_core::model::NodeId;
+use bn_session::TabId;
 use dioxus::prelude::*;
 
 use crate::state::{close_dialog, exec, SESSION};
@@ -12,11 +13,11 @@ use crate::ui::{Modal, TextInput, BTN, BTN_PRIMARY};
 pub fn LikelihoodDialog(id: NodeId) -> Element {
     let (name, state_names, initial) = {
         let s = SESSION.read();
-        if !s.doc.net.contains(id) {
+        if !s.doc().net.contains(id) {
             return rsx! {};
         }
-        let n = s.doc.net.node(id);
-        let initial: Vec<String> = match s.doc.evidence.get(id) {
+        let n = s.doc().net.node(id);
+        let initial: Vec<String> = match s.doc().evidence.get(id) {
             Some(bn_core::inference::Finding::Likelihood(l)) => {
                 n.states.iter().enumerate().map(|(i, _)| {
                     l.get(i).copied().unwrap_or(1.0).to_string()
@@ -94,7 +95,7 @@ pub fn ReportDialog(title: String, text: String) -> Element {
 
 #[component]
 pub fn RenameNetworkDialog() -> Element {
-    let mut name = use_signal(|| SESSION.read().doc.net.name.clone());
+    let mut name = use_signal(|| SESSION.read().doc().net.name.clone());
     let ok = move |_| {
         let n = name.read().clone();
         exec(|s| {
@@ -106,6 +107,35 @@ pub fn RenameNetworkDialog() -> Element {
     rsx! {
         Modal {
             title: "Network name",
+            width: "max-w-xs",
+            on_close: move |_| close_dialog(),
+            footer: rsx! {
+                button { class: BTN, onclick: move |_| close_dialog(), "Cancel" }
+                button { class: BTN_PRIMARY, onclick: ok, "OK" }
+            },
+            TextInput {
+                value: name.read().clone(),
+                autofocus: true,
+                oninput: move |v| name.set(v),
+            }
+        }
+    }
+}
+
+#[component]
+pub fn RenameTabDialog(id: TabId) -> Element {
+    let mut name = use_signal(|| SESSION.read().tab(id).doc.net.name.clone());
+    let ok = move |_| {
+        let n = name.read().clone();
+        exec(|s| {
+            bn_session::ops::tab::rename_tab(s, id, n);
+            Ok(())
+        });
+        close_dialog();
+    };
+    rsx! {
+        Modal {
+            title: "Rename tab",
             width: "max-w-xs",
             on_close: move |_| close_dialog(),
             footer: rsx! {

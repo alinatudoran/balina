@@ -32,7 +32,7 @@ pub fn export_png() {
 fn export_web(png: bool) {
     let (svg, name) = {
         let s = SESSION.read();
-        (svg::network_svg(&s.doc, &s.bridge), s.doc.net.name.clone())
+        (svg::network_svg(s.doc(), s.bridge()), s.doc().net.name.clone())
     };
     let Some(svg) = svg else {
         log_message("Nothing to export: the network has no nodes.");
@@ -56,7 +56,7 @@ fn export_with(
     spawn(async move {
         let (svg, name) = {
             let s = SESSION.read();
-            (svg::network_svg(&s.doc, &s.bridge), s.doc.net.name.clone())
+            (svg::network_svg(s.doc(), s.bridge()), s.doc().net.name.clone())
         };
         let Some(svg) = svg else {
             log_message("Nothing to export: the network has no nodes.");

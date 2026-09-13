@@ -180,11 +180,11 @@ pub fn drag_starts(
     };
     let starts = node_ids
         .into_iter()
-        .filter_map(|id| s.doc.visual.get(id).map(|v| (id, v.pos.x as f64, v.pos.y as f64)))
+        .filter_map(|id| s.doc().visual.get(id).map(|v| (id, v.pos.x as f64, v.pos.y as f64)))
         .collect();
     let note_starts = note_ids
         .into_iter()
-        .filter_map(|id| s.doc.notes.get(id).map(|n| (id, n.pos.x as f64, n.pos.y as f64)))
+        .filter_map(|id| s.doc().notes.get(id).map(|n| (id, n.pos.x as f64, n.pos.y as f64)))
         .collect();
     (starts, note_starts)
 }
@@ -198,8 +198,8 @@ pub fn check_link_now(
     reconnect_original_child: Option<NodeId>,
 ) -> crate::canvas::validation::LinkCheck {
     let s = crate::state::SESSION.read();
-    let anc = bn_session::views::ancestor_sets(&s.doc.net);
-    crate::canvas::validation::check_link(&s.doc.net, &anc, source, target, reconnect_original_child)
+    let anc = bn_session::views::ancestor_sets(&s.doc().net);
+    crate::canvas::validation::check_link(&s.doc().net, &anc, source, target, reconnect_original_child)
 }
 
 #[cfg(test)]

@@ -416,9 +416,9 @@ mod tests {
     #[test]
     fn beliefs_render_after_recompute() {
         let mut s = Session::default();
-        s.doc.add_node_at(NodeKind::Chance, Point::new(0.0, 0.0)).unwrap();
+        s.doc_mut().add_node_at(NodeKind::Chance, Point::new(0.0, 0.0)).unwrap();
         bn_session::ops::edit::recompute(&mut s);
-        let svg = network_svg(&s.doc, &s.bridge).unwrap();
+        let svg = network_svg(s.doc(), s.bridge()).unwrap();
         assert!(svg.contains(" 50.0"), "default 2-state uniform belief");
         assert!(svg.contains(BAR_ORANGE));
     }
@@ -426,9 +426,9 @@ mod tests {
     #[test]
     fn finding_gets_marker_bar_color_and_border() {
         let mut s = Session::default();
-        let a = s.doc.add_node_at(NodeKind::Chance, Point::new(0.0, 0.0)).unwrap();
+        let a = s.doc_mut().add_node_at(NodeKind::Chance, Point::new(0.0, 0.0)).unwrap();
         bn_session::ops::evidence::toggle_finding(&mut s, a, 0).unwrap();
-        let svg = network_svg(&s.doc, &s.bridge).unwrap();
+        let svg = network_svg(s.doc(), s.bridge()).unwrap();
         assert!(svg.contains("●"), "evidence marker");
         assert!(svg.contains(BAR_FINDING));
         assert!(svg.contains("rgb(90,90,90)"));

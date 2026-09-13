@@ -100,7 +100,7 @@ pub fn StickyNote(id: NoteId, rect: Rect) -> Element {
     // One scoped read; bail if the note vanished mid-render (undo/delete).
     let Some((text, color, font_size, collapsed)) = ({
         let s = SESSION.read();
-        s.doc.notes.get(id).map(|n| (n.text.clone(), n.color, n.font_size, n.collapsed))
+        s.doc().notes.get(id).map(|n| (n.text.clone(), n.color, n.font_size, n.collapsed))
     }) else {
         return rsx! {};
     };
@@ -330,7 +330,7 @@ fn NoteEditor(id: NoteId, initial: String, font_size: f32) -> Element {
         let text = draft.peek().clone();
         // An undo while typing can remove the note — committing then would
         // only log a spurious "note no longer exists".
-        if SESSION.read().doc.notes.contains_key(id) {
+        if SESSION.read().doc().notes.contains_key(id) {
             exec(|s| bn_session::ops::edit::set_note_text(s, id, text));
         }
         if *EDITING_NOTE.peek() == Some(id) {

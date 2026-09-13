@@ -60,7 +60,7 @@ pub fn add_at_center(item: PaletteItem) {
 
 #[component]
 pub fn Toolbar() -> Element {
-    let auto_update = SESSION.read().doc.auto_update;
+    let auto_update = SESSION.read().doc().auto_update;
     let zoom_pct = (VIEWPORT.read().zoom * 100.0).round() as i32;
 
     rsx! {

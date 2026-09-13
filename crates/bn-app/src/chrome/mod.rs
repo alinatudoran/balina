@@ -12,4 +12,5 @@ pub mod message_log;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod recent;
 pub mod status_bar;
+pub mod tab_bar;
 pub mod toolbar;

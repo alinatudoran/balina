@@ -40,7 +40,7 @@ pub fn NetworkCanvas() -> Element {
             pos: NOTE_DRAG_POS.read().clone(),
             size: *NOTE_RESIZE.read(),
         };
-        build_scene(&s.doc, &DRAG_POS.read(), &note_ov)
+        build_scene(s.doc(), &DRAG_POS.read(), &note_ov)
     });
 
     // Fit-view on request (doc load bumps FIT_REQUEST; also first mount).

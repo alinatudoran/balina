@@ -344,6 +344,26 @@ impl Document {
         Dirt::Evidence
     }
 
+    // ---- cloning ------------------------------------------------------------
+
+    /// Clone the document for duplication (e.g. duplicate tab). Resets undo
+    /// stacks and clears path/modified, preserving the network + visuals +
+    /// evidence.
+    pub fn clone_for_duplicate(&self) -> Document {
+        Document {
+            net: self.net.clone(),
+            visual: self.visual.clone(),
+            notes: self.notes.clone(),
+            evidence: self.evidence.clone(),
+            auto_update: self.auto_update,
+            path: None,
+            modified: false,
+            change_seq: 0,
+            undo: vec![],
+            redo: vec![],
+        }
+    }
+
     // ---- persistence -------------------------------------------------------
 
     pub fn to_io_document(&self) -> io::Document {

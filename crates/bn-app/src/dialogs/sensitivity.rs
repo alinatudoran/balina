@@ -15,7 +15,7 @@ pub fn SensitivityDialog() -> Element {
 
     let candidates: Vec<(NodeId, String)> = {
         let s = SESSION.read();
-        s.doc
+        s.doc()
             .net
             .nodes()
             .filter(|(_, n)| n.kind != NodeKind::Utility)
@@ -28,7 +28,7 @@ pub fn SensitivityDialog() -> Element {
     // Rows referencing deleted nodes are dropped lazily.
     let live_rows: Vec<SensRowView> = {
         let s = SESSION.read();
-        rows.read().iter().filter(|r| s.doc.net.contains(r.node)).cloned().collect()
+        rows.read().iter().filter(|r| s.doc().net.contains(r.node)).cloned().collect()
     };
     let max_mi = live_rows.first().map(|r| r.mutual_info).unwrap_or(0.0).max(1e-12);
 
@@ -47,11 +47,11 @@ pub fn SensitivityDialog() -> Element {
             let s = SESSION.read();
             let target_name = target
                 .read()
-                .filter(|&t| s.doc.net.contains(t))
-                .map(|t| s.doc.net.node(t).name.clone())
+                .filter(|&t| s.doc().net.contains(t))
+                .map(|t| s.doc().net.node(t).name.clone())
                 .unwrap_or_else(|| "(deleted)".into());
             let live: Vec<SensRowView> =
-                rows.read().iter().filter(|r| s.doc.net.contains(r.node)).cloned().collect();
+                rows.read().iter().filter(|r| s.doc().net.contains(r.node)).cloned().collect();
             (target_name, live)
         };
         match bn_session::ops::tools::sensitivity_csv(&target_name, &live) {

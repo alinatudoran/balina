@@ -72,7 +72,16 @@ mod imp {
         (
             "Network",
             &[
-                item_accel("network.compile", "Compile Now", "F5"),
+                item_accel("tab.new", "New Tab", "⌘T"),
+                item_accel("tab.close", "Close Tab", "⌘W"),
+                item("tab.duplicate", "Duplicate Tab"),
+                Item {
+                    id: "network.compile",
+                    label: "Compile Now",
+                    accel: Some("F5"),
+                    sep_before: true,
+                    auto_update_check: false,
+                },
                 Item {
                     id: "network.autoUpdate",
                     label: "Auto Update Beliefs",
@@ -111,7 +120,7 @@ mod imp {
     #[component]
     pub fn MenuBar() -> Element {
         let mut open: Signal<Option<usize>> = use_signal(|| None);
-        let auto_update = SESSION.read().doc.auto_update;
+        let auto_update = SESSION.read().doc().auto_update;
         let is_open = *open.read();
 
         rsx! {

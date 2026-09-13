@@ -60,6 +60,32 @@ pub fn handle_keydown(ev: KeyboardEvent) {
         }
     }
 
+    // Tab hotkeys fire even while typing (window-level, like Cmd+N/O/S).
+    {
+        let mods = data.modifiers();
+        let cmd = mods.contains(Modifiers::META) || mods.contains(Modifiers::CONTROL);
+        let shift = mods.contains(Modifiers::SHIFT);
+        if cmd && matches!(&key, Key::Character(k) if k.eq_ignore_ascii_case("t")) {
+            ev.prevent_default();
+            crate::chrome::menu::route("tab.new");
+            return;
+        }
+        if cmd && matches!(&key, Key::Character(k) if k.eq_ignore_ascii_case("w")) {
+            ev.prevent_default();
+            crate::chrome::menu::route("tab.close");
+            return;
+        }
+        if key == Key::Tab && mods.contains(Modifiers::CONTROL) {
+            ev.prevent_default();
+            if shift {
+                crate::chrome::menu::route("tab.prev");
+            } else {
+                crate::chrome::menu::route("tab.next");
+            }
+            return;
+        }
+    }
+
     // Edit hotkeys are ignored while a text input has focus.
     if *TYPING.read() {
         return;

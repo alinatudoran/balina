@@ -24,4 +24,4 @@ pub use doc::{
 };
 pub use engine_bridge::EngineBridge;
 pub use error::CmdError;
-pub use session::Session;
+pub use session::{Session, Tab, TabId};

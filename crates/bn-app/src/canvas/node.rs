@@ -102,12 +102,12 @@ struct NodeData {
 
 fn read_node_data(id: NodeId) -> Option<NodeData> {
     let s = SESSION.read();
-    if !s.doc.net.contains(id) {
+    if !s.doc().net.contains(id) {
         return None;
     }
-    let n = s.doc.net.node(id);
-    let v = s.doc.visual.get(id);
-    let finding = s.doc.evidence.get(id);
+    let n = s.doc().net.node(id);
+    let v = s.doc().visual.get(id);
+    let finding = s.doc().evidence.get(id);
     Some(NodeData {
         name: n.name.clone(),
         title: n.title.clone(),
@@ -121,9 +121,9 @@ fn read_node_data(id: NodeId) -> Option<NodeData> {
             _ => None,
         },
         has_finding: finding.is_some(),
-        beliefs: s.bridge.beliefs.get(id).cloned(),
-        decision_eu: s.bridge.decision_eu.get(id).cloned(),
-        utility_ev: s.bridge.utility_ev.get(id).copied().filter(|v| v.is_finite()),
+        beliefs: s.bridge().beliefs.get(id).cloned(),
+        decision_eu: s.bridge().decision_eu.get(id).cloned(),
+        utility_ev: s.bridge().utility_ev.get(id).copied().filter(|v| v.is_finite()),
     })
 }
 

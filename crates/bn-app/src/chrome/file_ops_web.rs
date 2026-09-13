@@ -16,7 +16,7 @@ const OPEN_FILTERS: &[(&str, &[&str])] = &[
 
 /// True to proceed (document unmodified, or the user confirmed discarding).
 async fn confirm_discard(action: &str) -> bool {
-    if !SESSION.read().doc.modified {
+    if !SESSION.read().modified {
         return true;
     }
     crate::platform::confirm(
@@ -48,7 +48,7 @@ fn open_text(text: &str, fmt: io::Format) {
         *crate::canvas::controller::FIT_REQUEST.write() += 1;
         let (name, n) = {
             let s = SESSION.read();
-            (s.doc.net.name.clone(), s.doc.net.len())
+            (s.doc().net.name.clone(), s.doc().net.len())
         };
         log_message(format!("Loaded `{name}` ({n} nodes)."));
     }

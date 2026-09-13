@@ -35,10 +35,10 @@ pub fn Minimap(scene: Scene) -> Element {
         scene
             .nodes
             .iter()
-            .filter(|n| s.doc.net.contains(n.id))
+            .filter(|n| s.doc().net.contains(n.id))
             .map(|n| {
                 let (x, y) = to_mini(n.rect.x, n.rect.y);
-                (x, y, n.rect.w * scale, n.rect.h * scale, kind_header_color(s.doc.net.node(n.id).kind))
+                (x, y, n.rect.w * scale, n.rect.h * scale, kind_header_color(s.doc().net.node(n.id).kind))
             })
             .collect()
     };
@@ -50,7 +50,7 @@ pub fn Minimap(scene: Scene) -> Element {
             .notes
             .iter()
             .filter_map(|n| {
-                let note = s.doc.notes.get(n.id)?;
+                let note = s.doc().notes.get(n.id)?;
                 let (x, y) = to_mini(n.rect.x, n.rect.y);
                 Some((x, y, n.rect.w * scale, n.rect.h * scale, note_fill(note.color)))
             })
