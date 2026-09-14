@@ -9,6 +9,7 @@ use bn_core::model::{Network, NodeId};
 use bn_session::jobs::{JobCtx, JobEvent};
 use bn_session::ops::learn::{self, StructureJobInput, StructureLearnOpts, StructureOutcome};
 use bn_session::patch::structure_patch;
+use bn_session::TabId;
 use wasm_bindgen::prelude::*;
 use web_sys::DedicatedWorkerGlobalScope;
 
@@ -77,6 +78,7 @@ pub fn worker_entry(request_json: String, cases: js_sys::Uint8Array) {
         cancel: Arc::new(AtomicBool::new(false)), // cancel = terminate()
         class: opts.class_node,
         opts,
+        tab_id: TabId::default(), // the worker has no session; the app applies to its own tab
     };
     let jc = JobCtx::new(input.cancel.clone(), |e: JobEvent| {
         post(&WorkerMsg::Progress { frac: e.frac, text: e.text });
