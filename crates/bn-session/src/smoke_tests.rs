@@ -175,68 +175,68 @@ fn change_seq_semantics() {
 fn op_flow_open_evidence_undo() {
     let mut s = Session::new();
     ops::file::doc_open(&mut s, examples_dir().join("asia.balina")).unwrap();
-    assert_eq!(s.doc.net.len(), 8);
-    assert!(s.bridge.compiled && !s.bridge.conflict);
+    assert_eq!(s.doc().net.len(), 8);
+    assert!(s.bridge().compiled && !s.bridge().conflict);
 
-    let dysp = s.doc.net.find_by_name("Dyspnea").unwrap();
-    let tub = s.doc.net.find_by_name("Tuberculosis").unwrap();
-    let tub_prior = s.bridge.beliefs[tub][0];
+    let dysp = s.doc().net.find_by_name("Dyspnea").unwrap();
+    let tub = s.doc().net.find_by_name("Tuberculosis").unwrap();
+    let tub_prior = s.bridge().beliefs[tub][0];
 
     ops::evidence::toggle_finding(&mut s, dysp, 0).unwrap();
-    assert_eq!(s.doc.evidence.len(), 1);
-    assert!(s.bridge.beliefs[tub][0] > tub_prior);
-    assert!(s.bridge.log_p_e.is_some());
+    assert_eq!(s.doc().evidence.len(), 1);
+    assert!(s.bridge().beliefs[tub][0] > tub_prior);
+    assert!(s.bridge().log_p_e.is_some());
 
     ops::edit::undo(&mut s);
-    assert_eq!(s.doc.evidence.len(), 0);
-    assert!(s.doc.can_redo());
+    assert_eq!(s.doc().evidence.len(), 0);
+    assert!(s.doc().can_redo());
 }
 
 #[test]
 fn stale_node_ids_become_bad_request() {
     let mut s = Session::new();
     let id = ops::edit::add_node(&mut s, NodeKind::Chance, 10.0, 20.0).unwrap();
-    assert!(views::check_node(&s.doc.net, id).is_ok());
+    assert!(views::check_node(&s.doc().net, id).is_ok());
     // Delete the node; the retained id must fail cleanly, never panic.
     ops::edit::delete_items(&mut s, &[id], &[], &[]).unwrap();
-    assert!(s.doc.net.is_empty());
+    assert!(s.doc().net.is_empty());
     assert!(matches!(
         ops::evidence::toggle_finding(&mut s, id, 0),
         Err(CmdError::BadRequest(_))
     ));
-    assert!(matches!(views::check_node(&s.doc.net, id), Err(CmdError::BadRequest(_))));
+    assert!(matches!(views::check_node(&s.doc().net, id), Err(CmdError::BadRequest(_))));
     // Undo revives the node and its id becomes valid again.
     ops::edit::undo(&mut s);
-    assert!(views::check_node(&s.doc.net, id).is_ok());
+    assert!(views::check_node(&s.doc().net, id).is_ok());
 }
 
 #[test]
 fn set_cpt_shape_error_rolls_back() {
     let mut s = Session::new();
     let id = ops::edit::add_node(&mut s, NodeKind::Chance, 0.0, 0.0).unwrap();
-    let before = s.doc.net.node(id).table.data.clone();
+    let before = s.doc().net.node(id).table.data.clone();
     // Wrong length → error, and the failed begin_change snapshot is rolled back.
     let err = ops::cpt::set_cpt(&mut s, id, vec![0.5; 5]).unwrap_err();
     assert!(matches!(err, CmdError::Model(_)));
     assert_eq!(
-        s.doc.net.node(id).table.data,
+        s.doc().net.node(id).table.data,
         before,
         "failed set_cpt must leave the table unchanged"
     );
     // A correct edit works and marks Params dirt (beliefs update).
     ops::cpt::set_cpt(&mut s, id, vec![0.3, 0.7]).unwrap();
-    assert!((s.bridge.beliefs[id][0] - 0.3).abs() < 1e-9);
+    assert!((s.bridge().beliefs[id][0] - 0.3).abs() < 1e-9);
 }
 
 #[test]
 fn cpt_view_row_labels() {
     let mut s = Session::new();
     ops::file::doc_open(&mut s, examples_dir().join("asia.balina")).unwrap();
-    let dysp = s.doc.net.find_by_name("Dyspnea").unwrap();
+    let dysp = s.doc().net.find_by_name("Dyspnea").unwrap();
     let v = ops::cpt::get_cpt(&s, dysp).unwrap();
     assert_eq!(v.node, dysp);
     assert!(!v.is_utility);
-    assert_eq!(v.parent_headers.len(), s.doc.net.node(dysp).parents.len());
+    assert_eq!(v.parent_headers.len(), s.doc().net.node(dysp).parents.len());
     for row in &v.rows {
         assert_eq!(row.labels.len(), v.parent_headers.len());
         assert_eq!(row.values.len(), v.out_card);
@@ -257,7 +257,7 @@ fn structure_job_prepare_run_apply() {
     ops::file::doc_open(&mut s, examples_dir().join("asia.balina")).unwrap();
 
     // Simulate a small case set to learn from.
-    let cases = ops::learn::simulate_cases_csv(&s.doc.net, 2_000, 0.0).unwrap().into_bytes();
+    let cases = ops::learn::simulate_cases_csv(&s.doc().net, 2_000, 0.0).unwrap().into_bytes();
 
     let opts = StructureLearnOpts {
         algo: StructAlgo::HillClimb,
@@ -272,22 +272,24 @@ fn structure_job_prepare_run_apply() {
         forbidden_edges: vec![],
     };
     let input = prepare_structure_job(&mut s, opts.clone()).unwrap();
-    assert!(s.job_cancel.is_some(), "busy while job runs");
+    let tab_id = input.tab_id;
+    assert!(s.active_tab().job_cancel.is_some(), "busy while job runs");
     assert!(matches!(prepare_structure_job(&mut s, opts.clone()), Err(CmdError::Busy(_))));
     let started_seq = input.started_seq;
     let jc = JobCtx::new(Arc::new(AtomicBool::new(false)), |_| {});
     let outcome = run_structure_job(input, &cases, None, &jc);
-    let result = apply_structure_outcome(&mut s, outcome, started_seq).unwrap();
-    assert!(s.job_cancel.is_none(), "busy slot cleared");
-    assert!(s.bridge.compiled && !s.bridge.conflict);
+    let result = apply_structure_outcome(&mut s, tab_id, outcome, started_seq).unwrap();
+    assert!(s.active_tab().job_cancel.is_none(), "busy slot cleared");
+    assert!(s.bridge().compiled && !s.bridge().conflict);
     assert!(result.report.contains("Links:"));
     // Staleness: edit mid-job → result discarded.
     let input = prepare_structure_job(&mut s, opts).unwrap();
+    let tab_id = input.tab_id;
     let started_seq = input.started_seq;
     let outcome = run_structure_job(input, &cases, None, &jc);
-    s.doc.begin_change(); // concurrent edit
+    s.doc_mut().begin_change(); // concurrent edit
     assert!(matches!(
-        apply_structure_outcome(&mut s, outcome, started_seq),
+        apply_structure_outcome(&mut s, tab_id, outcome, started_seq),
         Err(CmdError::Stale(_))
     ));
 }
@@ -310,7 +312,7 @@ fn structure_patch_equivalent_to_outcome_swap() {
     let mut s_patch = Session::new();
     ops::file::doc_open(&mut s_patch, examples_dir().join("asia.balina")).unwrap();
 
-    let cases = ops::learn::simulate_cases_csv(&s_swap.doc.net, 2_000, 0.0).unwrap().into_bytes();
+    let cases = ops::learn::simulate_cases_csv(&s_swap.doc().net, 2_000, 0.0).unwrap().into_bytes();
     let opts = StructureLearnOpts {
         algo: StructAlgo::HillClimb,
         score: ScoreChoice::Bic,
@@ -327,6 +329,7 @@ fn structure_patch_equivalent_to_outcome_swap() {
 
     // One job result, applied both ways.
     let input = prepare_structure_job(&mut s_swap, opts).unwrap();
+    let swap_tab_id = input.tab_id;
     let started_seq = input.started_seq;
     let before = input.net.clone();
     let outcome = run_structure_job(input, &cases, None, &jc);
@@ -339,10 +342,12 @@ fn structure_patch_equivalent_to_outcome_swap() {
     let patch: crate::patch::StructurePatch =
         serde_json::from_str(&serde_json::to_string(&patch).unwrap()).unwrap();
 
-    s_patch.job_cancel = Some(Arc::new(AtomicBool::new(false))); // as if a job ran
-    let patch_seq = s_patch.doc.change_seq;
+    let patch_tab_id = s_patch.active_id();
+    s_patch.active_tab_mut().job_cancel = Some(Arc::new(AtomicBool::new(false))); // as if a job ran
+    let patch_seq = s_patch.doc().change_seq;
     apply_structure_patch(
         &mut s_patch,
+        patch_tab_id,
         &patch,
         report.clone(),
         summary.clone(),
@@ -350,9 +355,10 @@ fn structure_patch_equivalent_to_outcome_swap() {
         patch_seq,
     )
     .unwrap();
-    assert!(s_patch.job_cancel.is_none());
+    assert!(s_patch.active_tab().job_cancel.is_none());
     apply_structure_outcome(
         &mut s_swap,
+        swap_tab_id,
         StructureOutcome::Done { net: learned, report, summary, warnings },
         started_seq,
     )
@@ -368,14 +374,14 @@ fn structure_patch_equivalent_to_outcome_swap() {
         e.sort();
         e
     };
-    assert_eq!(name_edges(&s_swap.doc.net), name_edges(&s_patch.doc.net));
-    for (_, n_swap) in s_swap.doc.net.nodes() {
-        let id = s_patch.doc.net.find_by_name(&n_swap.name).unwrap();
-        let n_patch = s_patch.doc.net.node(id);
+    assert_eq!(name_edges(&s_swap.doc().net), name_edges(&s_patch.doc().net));
+    for (_, n_swap) in s_swap.doc().net.nodes() {
+        let id = s_patch.doc().net.find_by_name(&n_swap.name).unwrap();
+        let n_patch = s_patch.doc().net.node(id);
         let parents_swap: Vec<&str> =
-            n_swap.parents.iter().map(|&p| s_swap.doc.net.node(p).name.as_str()).collect();
+            n_swap.parents.iter().map(|&p| s_swap.doc().net.node(p).name.as_str()).collect();
         let parents_patch: Vec<&str> =
-            n_patch.parents.iter().map(|&p| s_patch.doc.net.node(p).name.as_str()).collect();
+            n_patch.parents.iter().map(|&p| s_patch.doc().net.node(p).name.as_str()).collect();
         assert_eq!(parents_swap, parents_patch, "parent order for {}", n_swap.name);
         assert_eq!(n_swap.table.data.len(), n_patch.table.data.len(), "table {}", n_swap.name);
         for (a, b) in n_swap.table.data.iter().zip(&n_patch.table.data) {
@@ -393,12 +399,12 @@ fn id_solution_sensitivity_and_ancestors() {
     let sol = ops::tools::solve_influence_diagram(&s).unwrap();
     assert!(sol.text.contains("Maximum expected utility"));
     // Sensitivity runs on a chance target.
-    let weather = s.doc.net.find_by_name("Weather").unwrap();
+    let weather = s.doc().net.find_by_name("Weather").unwrap();
     let rows = ops::tools::run_sensitivity(&mut s, weather).unwrap();
     assert!(!rows.is_empty());
     // Ancestor sets support the canvas cycle checks.
-    let anc = views::ancestor_sets(&s.doc.net);
-    let sat = s.doc.net.find_by_name("Satisfaction").unwrap();
+    let anc = views::ancestor_sets(&s.doc().net);
+    let sat = s.doc().net.find_by_name("Satisfaction").unwrap();
     assert!(anc[sat].contains(&weather), "Weather is an ancestor of Satisfaction");
     assert!(anc[weather].is_empty());
 }
@@ -408,49 +414,49 @@ fn id_solution_sensitivity_and_ancestors() {
 #[test]
 fn note_ops_undo_and_stale_ids() {
     let mut s = Session::new();
-    let seq0 = s.doc.change_seq;
+    let seq0 = s.doc().change_seq;
 
     // Add + edit: visual-only, so change_seq never moves.
     let id = ops::edit::add_note(&mut s, 30.0, 40.0).unwrap();
     ops::edit::set_note_text(&mut s, id, "hello".into()).unwrap();
     ops::edit::set_note_color(&mut s, id, [181, 220, 255]).unwrap();
     ops::edit::move_items(&mut s, &[], &[(id, 5.0, 6.0)]).unwrap();
-    assert_eq!(s.doc.change_seq, seq0);
-    assert_eq!(s.doc.notes[id].text, "hello");
-    assert_eq!(s.doc.notes[id].pos, Point::new(5.0, 6.0));
+    assert_eq!(s.doc().change_seq, seq0);
+    assert_eq!(s.doc().notes[id].text, "hello");
+    assert_eq!(s.doc().notes[id].pos, Point::new(5.0, 6.0));
 
     // Clamps.
     ops::edit::resize_note(&mut s, id, 1.0, 1.0).unwrap();
-    assert_eq!((s.doc.notes[id].w, s.doc.notes[id].h), crate::doc::NOTE_MIN_SIZE);
+    assert_eq!((s.doc().notes[id].w, s.doc().notes[id].h), crate::doc::NOTE_MIN_SIZE);
     ops::edit::nudge_note_font(&mut s, id, 1000.0).unwrap();
-    assert_eq!(s.doc.notes[id].font_size, crate::doc::NOTE_FONT_RANGE.1);
+    assert_eq!(s.doc().notes[id].font_size, crate::doc::NOTE_FONT_RANGE.1);
 
     // Collapse keeps the expanded size; still no change_seq movement.
     ops::edit::set_note_collapsed(&mut s, id, true).unwrap();
-    assert!(s.doc.notes[id].collapsed);
-    assert_eq!((s.doc.notes[id].w, s.doc.notes[id].h), crate::doc::NOTE_MIN_SIZE);
-    assert_eq!(s.doc.change_seq, seq0);
+    assert!(s.doc().notes[id].collapsed);
+    assert_eq!((s.doc().notes[id].w, s.doc().notes[id].h), crate::doc::NOTE_MIN_SIZE);
+    assert_eq!(s.doc().change_seq, seq0);
     // Setting the same state is a no-op: one undo reverts the real toggle.
     ops::edit::set_note_collapsed(&mut s, id, true).unwrap();
     ops::edit::undo(&mut s);
-    assert!(!s.doc.notes[id].collapsed);
+    assert!(!s.doc().notes[id].collapsed);
     ops::edit::redo(&mut s);
-    assert!(s.doc.notes[id].collapsed);
+    assert!(s.doc().notes[id].collapsed);
     ops::edit::set_note_collapsed(&mut s, id, false).unwrap();
     // Undo/redo themselves bump change_seq (any undo may touch the model) —
     // re-baseline before the notes-only-delete check below.
-    let seq0 = s.doc.change_seq;
+    let seq0 = s.doc().change_seq;
 
     // Notes-only delete: no change_seq bump; undo restores the note.
     ops::edit::delete_items(&mut s, &[], &[], &[id]).unwrap();
-    assert_eq!(s.doc.change_seq, seq0);
-    assert!(s.doc.notes.is_empty());
+    assert_eq!(s.doc().change_seq, seq0);
+    assert!(s.doc().notes.is_empty());
     assert!(matches!(
         ops::edit::set_note_text(&mut s, id, "x".into()),
         Err(CmdError::BadRequest(_))
     ));
     ops::edit::undo(&mut s);
-    assert_eq!(s.doc.notes[id].text, "hello");
+    assert_eq!(s.doc().notes[id].text, "hello");
 }
 
 #[test]
@@ -461,7 +467,7 @@ fn unchanged_note_text_is_not_an_undo_step() {
     ops::edit::set_note_text(&mut s, id, "hello".into()).unwrap(); // no-op
     // One undo must revert the ORIGINAL text edit, not a phantom no-op step.
     ops::edit::undo(&mut s);
-    assert_eq!(s.doc.notes[id].text, "");
+    assert_eq!(s.doc().notes[id].text, "");
 }
 
 #[test]
@@ -473,9 +479,9 @@ fn notes_roundtrip_through_io_document() {
     ops::edit::nudge_note_font(&mut s, id, 4.0).unwrap();
     ops::edit::set_note_collapsed(&mut s, id, true).unwrap();
 
-    let iodoc = s.doc.to_io_document();
+    let iodoc = s.doc().to_io_document();
     let back = Document::from_io_document(iodoc, None);
     assert_eq!(back.notes.len(), 1);
     let n = back.notes.values().next().unwrap();
-    assert_eq!(*n, s.doc.notes[id]);
+    assert_eq!(*n, s.doc().notes[id]);
 }

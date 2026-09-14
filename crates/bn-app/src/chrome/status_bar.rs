@@ -9,15 +9,15 @@ use crate::state::{SESSION, SHOW_MESSAGES};
 #[component]
 pub fn StatusBar() -> Element {
     let s = SESSION.read();
-    let title = format!("{}{}", s.doc.net.name, if s.doc.modified { " *" } else { "" });
-    let conflict = s.bridge.conflict;
-    let compiled = s.bridge.compiled;
-    let stale = s.bridge.is_dirty();
-    let log_p_e = s.bridge.log_p_e;
-    let evidence_count = s.doc.evidence.len();
-    let n_nodes = s.doc.net.len();
-    let n_edges = s.doc.net.edges().len();
-    let last_ms = s.bridge.last_compile_ms;
+    let title = format!("{}{}", s.doc().net.name, if s.doc().modified { " *" } else { "" });
+    let conflict = s.bridge().conflict;
+    let compiled = s.bridge().compiled;
+    let stale = s.bridge().is_dirty();
+    let log_p_e = s.bridge().log_p_e;
+    let evidence_count = s.doc().evidence.len();
+    let n_nodes = s.doc().net.len();
+    let n_edges = s.doc().net.edges().len();
+    let last_ms = s.bridge().last_compile_ms;
     drop(s);
     let show_messages = *SHOW_MESSAGES.read();
 

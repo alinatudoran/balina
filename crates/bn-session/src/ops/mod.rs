@@ -8,4 +8,5 @@ pub mod edit;
 pub mod evidence;
 pub mod file;
 pub mod learn;
+pub mod tab;
 pub mod tools;

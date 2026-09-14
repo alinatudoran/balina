@@ -21,10 +21,10 @@ struct StateRow {
 pub fn NodePropertiesDialog(id: NodeId) -> Element {
     let init = {
         let s = SESSION.read();
-        if !s.doc.net.contains(id) {
+        if !s.doc().net.contains(id) {
             return rsx! {};
         }
-        let n = s.doc.net.node(id);
+        let n = s.doc().net.node(id);
         (
             n.name.clone(),
             n.title.clone(),
@@ -54,7 +54,7 @@ pub fn NodePropertiesDialog(id: NodeId) -> Element {
 
     let child_count = {
         let s = SESSION.read();
-        s.doc.net.nodes().filter(|(_, n)| n.parents.contains(&id)).count()
+        s.doc().net.nodes().filter(|(_, n)| n.parents.contains(&id)).count()
     };
     let remap_changed = states.read().len() != orig_state_count
         || states.read().iter().enumerate().any(|(i, r)| r.orig != Some(i));

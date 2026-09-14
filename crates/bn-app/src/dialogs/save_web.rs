@@ -15,7 +15,7 @@ const FORMATS: &[(io::Format, &str, &str)] = &[
 
 #[component]
 pub fn SaveAsWebDialog() -> Element {
-    let mut name = use_signal(|| SESSION.read().doc.net.name.clone());
+    let mut name = use_signal(|| SESSION.read().doc().net.name.clone());
     let mut fmt_idx = use_signal(|| 0usize);
 
     let save = move |_| {

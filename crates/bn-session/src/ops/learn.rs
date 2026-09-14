@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use crate::doc::Dirt;
 use crate::error::CmdError;
 use crate::jobs::{JobCtx, JobEvent};
-use crate::session::Session;
+use crate::session::{Session, TabId};
 use crate::views::{check_node, LearnCptsResult, StructureLearnResult};
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
@@ -62,11 +62,11 @@ pub fn learn_cpts(
     let file = cases;
     let delim = forced_delim;
     // One undo step for node creation + learning together.
-    s.doc.begin_change();
+    s.doc_mut().begin_change();
     let mut created_lines: Vec<String> = vec![];
     let cases = if opts.create_nodes {
         let import = ImportOptions { bins: opts.bins, ..Default::default() };
-        match learn::import_cases_with(&mut s.doc.net, file, delim, &import) {
+        match learn::import_cases_with(&mut s.doc_mut().net, file, delim, &import) {
             Ok((cases, reports)) => {
                 for r in reports.iter().filter(|r| r.created) {
                     created_lines.push(match &r.continuous {
@@ -80,23 +80,23 @@ pub fn learn_cpts(
                 cases
             }
             Err(e) => {
-                s.doc.undo();
+                s.doc_mut().undo();
                 return Err(e.into());
             }
         }
     } else {
-        match learn::read_cases_with(&s.doc.net, file, delim) {
+        match learn::read_cases_with(&s.doc().net, file, delim) {
             Ok(c) => c,
             Err(e) => {
-                s.doc.undo();
+                s.doc_mut().undo();
                 return Err(e.into());
             }
         }
     };
-    s.doc.ensure_visuals();
+    s.doc_mut().ensure_visuals();
     let result: Result<String, CmdError> = match opts.method {
         LearnMethod::Counting => {
-            learn::learn_counting(&mut s.doc.net, &cases, &CountingOptions::default())
+            learn::learn_counting(&mut s.doc_mut().net, &cases, &CountingOptions::default())
                 .map(|r| {
                     format!(
                         "Counting: {} node(s) updated from {} case(s).",
@@ -107,7 +107,7 @@ pub fn learn_cpts(
         }
         LearnMethod::Em => {
             let em = EmOptions { max_iters: opts.em_iters, ..Default::default() };
-            learn::learn_em(&mut s.doc.net, &cases, &em)
+            learn::learn_em(&mut s.doc_mut().net, &cases, &em)
                 .map(|r| {
                     format!(
                         "EM: {} iteration(s), final log-likelihood {:.4}{}",
@@ -136,7 +136,7 @@ pub fn learn_cpts(
             Ok(LearnCptsResult { report, summary })
         }
         Err(e) => {
-            s.doc.undo();
+            s.doc_mut().undo();
             Err(e)
         }
     }
@@ -217,58 +217,63 @@ pub struct StructureJobInput {
     pub cancel: Arc<AtomicBool>,
     pub class: Option<NodeId>,
     pub opts: StructureLearnOpts,
+    /// The tab this job was started on (apply result here).
+    pub tab_id: TabId,
 }
 
 pub fn prepare_structure_job(
     s: &mut Session,
     opts: StructureLearnOpts,
 ) -> Result<StructureJobInput, CmdError> {
-    if s.job_cancel.is_some() {
+    if s.active_tab().job_cancel.is_some() {
         return Err(CmdError::Busy("a learning job is already running".into()));
     }
     let class = match (opts.class_node, opts.algo.needs_class()) {
         (Some(c), _) => {
-            check_node(&s.doc.net, c)?;
+            check_node(&s.doc().net, c)?;
             Some(c)
         }
         (None, true) => return Err(CmdError::BadRequest("this algorithm needs a class node".into())),
         (None, false) => None,
     };
     let cancel = Arc::new(AtomicBool::new(false));
-    s.job_cancel = Some(cancel.clone());
+    s.active_tab_mut().job_cancel = Some(cancel.clone());
+    let tab_id = s.active_id();
     Ok(StructureJobInput {
-        net: s.doc.net.clone(),
-        started_seq: s.doc.change_seq,
+        net: s.doc().net.clone(),
+        started_seq: s.doc().change_seq,
         cancel,
         class,
         opts,
+        tab_id,
     })
 }
 
 pub fn cancel_structure_job(s: &mut Session) {
-    if let Some(c) = &s.job_cancel {
+    if let Some(c) = &s.active_tab().job_cancel {
         c.store(true, Ordering::Relaxed);
     }
 }
 
-/// Apply a finished job's outcome. Always clears the busy slot.
+/// Apply a finished job's outcome to a specific tab. Always clears the busy slot.
 pub fn apply_structure_outcome(
     s: &mut Session,
+    tab_id: TabId,
     outcome: StructureOutcome,
     started_seq: u64,
 ) -> Result<StructureLearnResult, CmdError> {
-    s.job_cancel = None;
+    s.tab_mut(tab_id).job_cancel = None;
     match outcome {
         StructureOutcome::Done { net, report, summary, warnings } => {
-            if s.doc.change_seq != started_seq {
+            if s.tab(tab_id).doc.change_seq != started_seq {
                 return Err(CmdError::Stale(
                     "network was edited while learning ran — result discarded; run again".into(),
                 ));
             }
-            s.doc.begin_change();
-            s.doc.net = net; // clone shares NodeIds with visual/evidence
-            s.doc.ensure_visuals();
-            s.finish(Dirt::Structure);
+            s.tab_mut(tab_id).doc.begin_change();
+            s.tab_mut(tab_id).doc.net = net; // clone shares NodeIds with visual/evidence
+            s.tab_mut(tab_id).doc.ensure_visuals();
+            s.finish_tab(tab_id, Dirt::Structure);
             Ok(StructureLearnResult { report, summary, warnings })
         }
         StructureOutcome::Cancelled => Err(CmdError::Cancelled),

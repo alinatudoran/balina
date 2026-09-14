@@ -16,7 +16,7 @@ pub fn DialogHost() -> Element {
             _ => None,
         };
         if let Some(id) = node
-            && !SESSION.read().doc.net.contains(id) {
+            && !SESSION.read().doc().net.contains(id) {
                 close_dialog();
             }
     });
@@ -55,6 +55,9 @@ pub fn DialogHost() -> Element {
         },
         DialogDesc::RenameNetwork => rsx! {
             crate::dialogs::misc::RenameNetworkDialog {}
+        },
+        DialogDesc::RenameTab { id } => rsx! {
+            crate::dialogs::misc::RenameTabDialog { id }
         },
         DialogDesc::About => rsx! {
             crate::dialogs::misc::AboutDialog {}

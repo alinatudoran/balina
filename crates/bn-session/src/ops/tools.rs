@@ -8,24 +8,25 @@ use crate::session::Session;
 use crate::views::{ArcStrengthRow, check_node, IdSolutionView, SensRowView};
 
 pub fn run_sensitivity(s: &mut Session, target: NodeId) -> Result<Vec<SensRowView>, CmdError> {
-    check_node(&s.doc.net, target)?;
-    if s.doc.net.node(target).kind == NodeKind::Utility {
+    check_node(&s.doc().net, target)?;
+    if s.doc().net.node(target).kind == NodeKind::Utility {
         return Err(CmdError::BadRequest("target must be a chance or decision node".into()));
     }
     let cands: Vec<NodeId> = s
-        .doc
+        .doc()
         .net
         .nodes()
         .filter(|(id, n)| n.kind != NodeKind::Utility && *id != target)
         .map(|(id, _)| id)
         .collect();
-    let engine = s.bridge.engine_mut(&s.doc);
-    let rows = bn_core::sensitivity::sensitivity_to_findings(engine, &s.doc.net, target, &cands)?;
+    let tab = s.active_tab_mut();
+    let engine = tab.bridge.engine_mut(&tab.doc);
+    let rows = bn_core::sensitivity::sensitivity_to_findings(engine, &tab.doc.net, target, &cands)?;
     Ok(rows
         .into_iter()
         .map(|r| SensRowView {
             node: r.node,
-            name: s.doc.net.node(r.node).name.clone(),
+            name: s.doc().net.node(r.node).name.clone(),
             mutual_info: r.mutual_info,
             entropy_reduction_pct: r.entropy_reduction_pct,
             variance_reduction: r.variance_reduction,
@@ -34,19 +35,21 @@ pub fn run_sensitivity(s: &mut Session, target: NodeId) -> Result<Vec<SensRowVie
 }
 
 pub fn solve_influence_diagram(s: &Session) -> Result<IdSolutionView, CmdError> {
-    let sol = bn_core::decision::solve_influence_diagram(&s.doc.net, &s.doc.evidence)?;
-    Ok(IdSolutionView { meu: sol.meu, text: format_id_solution(&s.doc, &sol) })
+    let doc = s.doc();
+    let sol = bn_core::decision::solve_influence_diagram(&doc.net, &doc.evidence)?;
+    Ok(IdSolutionView { meu: sol.meu, text: format_id_solution(doc, &sol) })
 }
 
 pub fn run_arc_strengths(s: &mut Session) -> Result<Vec<ArcStrengthRow>, CmdError> {
     use bn_core::inference::Finding;
     use bn_core::InferenceError;
 
-    let edges: Vec<(NodeId, NodeId)> = s.doc.net.edges().into_iter().collect();
+    let edges: Vec<(NodeId, NodeId)> = s.doc().net.edges().into_iter().collect();
     if edges.is_empty() {
         return Ok(vec![]);
     }
-    let engine = s.bridge.engine_mut(&s.doc);
+    let tab = s.active_tab_mut();
+    let engine = tab.bridge.engine_mut(&tab.doc);
     let saved = engine.evidence().clone();
 
     let mut out = Vec::with_capacity(edges.len());
@@ -87,8 +90,8 @@ pub fn run_arc_strengths(s: &mut Session) -> Result<Vec<ArcStrengthRow>, CmdErro
                 }
             }
         }
-        let parent_name = s.doc.net.node(*parent).name.clone();
-        let child_name = s.doc.net.node(*child).name.clone();
+        let parent_name = tab.doc.net.node(*parent).name.clone();
+        let child_name = tab.doc.net.node(*child).name.clone();
         out.push(ArcStrengthRow {
             parent: *parent,
             child: *child,

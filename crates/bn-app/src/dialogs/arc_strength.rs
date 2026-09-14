@@ -12,14 +12,14 @@ pub fn ArcStrengthDialog() -> Element {
     let mut rows: Signal<Vec<ArcStrengthRow>> = use_signal(Vec::new);
     let mut error: Signal<Option<String>> = use_signal(|| None);
 
-    let arc_count = SESSION.read().doc.net.edges().len();
+    let arc_count = SESSION.read().doc().net.edges().len();
     let can_run = arc_count > 0;
 
     let live_rows: Vec<ArcStrengthRow> = {
         let s = SESSION.read();
         rows.read()
             .iter()
-            .filter(|r| s.doc.net.contains(r.parent) && s.doc.net.contains(r.child))
+            .filter(|r| s.doc().net.contains(r.parent) && s.doc().net.contains(r.child))
             .cloned()
             .collect()
     };
@@ -42,7 +42,7 @@ pub fn ArcStrengthDialog() -> Element {
             let s = SESSION.read();
             rows.read()
                 .iter()
-                .filter(|r| s.doc.net.contains(r.parent) && s.doc.net.contains(r.child))
+                .filter(|r| s.doc().net.contains(r.parent) && s.doc().net.contains(r.child))
                 .cloned()
                 .collect()
         };

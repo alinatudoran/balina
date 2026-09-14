@@ -168,19 +168,20 @@ pub async fn run_structure_job(
 /// `ops::learn::apply_structure_outcome` (clears the busy slot, same errors).
 pub fn apply_structure_outcome(
     s: &mut Session,
+    tab_id: bn_session::TabId,
     outcome: StructureOutcome,
     started_seq: u64,
 ) -> Result<StructureLearnResult, CmdError> {
     match outcome {
         StructureOutcome::Done { patch, report, summary, warnings } => {
-            bn_session::patch::apply_structure_patch(s, &patch, report, summary, warnings, started_seq)
+            bn_session::patch::apply_structure_patch(s, tab_id, &patch, report, summary, warnings, started_seq)
         }
         StructureOutcome::Cancelled => {
-            s.job_cancel = None;
+            s.active_tab_mut().job_cancel = None;
             Err(CmdError::Cancelled)
         }
         StructureOutcome::Failed(e) => {
-            s.job_cancel = None;
+            s.active_tab_mut().job_cancel = None;
             Err(CmdError::Learn(e))
         }
     }

@@ -73,8 +73,13 @@ pub fn App() -> Element {
     // Window title tracks name + modified star.
     use_effect(move || {
         let s = SESSION.read();
-        let title =
-            format!("Balina — {}{}", s.doc.net.name, if s.doc.modified { " *" } else { "" });
+        let title = if s.tab_count() > 1 {
+            let tab_label = s.tab_label(s.active_id());
+            let star = if s.doc().modified { " *" } else { "" };
+            format!("Balina — {tab_label}{star}")
+        } else {
+            format!("Balina — {}{}", s.doc().net.name, if s.doc().modified { " *" } else { "" })
+        };
         drop(s);
         crate::platform::set_window_title(&title);
     });
@@ -83,7 +88,7 @@ pub fn App() -> Element {
         Gesture::PaletteDrag { item, cur_client, .. } => Some((*item, *cur_client)),
         _ => None,
     };
-    let conflict = SESSION.read().bridge.conflict;
+    let conflict = SESSION.read().bridge().conflict;
 
     rsx! {
         Stylesheet {}
@@ -119,6 +124,7 @@ pub fn App() -> Element {
             },
             crate::chrome::menu_bar::MenuBar {}
             Toolbar {}
+            crate::chrome::tab_bar::TabBar {}
             if conflict {
                 div {
                     class: "flex shrink-0 items-center gap-3 border-b border-red-200 \

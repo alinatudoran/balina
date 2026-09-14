@@ -1,5 +1,6 @@
 //! File formats. Each format has its own DTO layer; the shared unit of
 //! exchange is [`Document`]: a network plus visual (layout) metadata.
+//! A [`Project`] wraps multiple documents as tabs.
 
 pub mod native;
 pub mod xdsl;
@@ -69,6 +70,24 @@ pub struct Document {
     pub visual: VisualInfo,
 }
 
+// ---------------------------------------------------------------------------
+// Project: multi-tab container
+// ---------------------------------------------------------------------------
+
+/// One tab in a project.
+#[derive(Clone, Debug)]
+pub struct ProjectSheet {
+    pub label: String,
+    pub doc: Document,
+}
+
+/// A multi-tab project.
+#[derive(Clone, Debug)]
+pub struct Project {
+    pub sheets: Vec<ProjectSheet>,
+    pub active: usize,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Format {
     NativeJson,
@@ -98,6 +117,10 @@ pub enum Warning {
     Lossy(String),
 }
 
+// ---------------------------------------------------------------------------
+// Single-document load/save (XMLBIF, XDSL)
+// ---------------------------------------------------------------------------
+
 pub fn load(path: &Path) -> Result<Document, IoError> {
     let fmt = Format::from_path(path)?;
     let text = std::fs::read_to_string(path)?;
@@ -106,7 +129,12 @@ pub fn load(path: &Path) -> Result<Document, IoError> {
 
 pub fn load_str(text: &str, fmt: Format) -> Result<Document, IoError> {
     match fmt {
-        Format::NativeJson => native::from_json(text),
+        Format::NativeJson => {
+            // For single-doc load, take the active tab from the project.
+            let proj = native::project_from_json(text)?;
+            let idx = proj.active.min(proj.sheets.len().saturating_sub(1));
+            Ok(proj.sheets.into_iter().nth(idx).map(|s| s.doc).unwrap_or_default())
+        }
         Format::Xmlbif => xmlbif::from_xml(text),
         Format::Xdsl => xdsl::from_xml(text),
     }
@@ -121,8 +149,37 @@ pub fn save(doc: &Document, path: &Path) -> Result<Vec<Warning>, IoError> {
 
 pub fn save_str(doc: &Document, fmt: Format) -> Result<(String, Vec<Warning>), IoError> {
     match fmt {
-        Format::NativeJson => Ok((native::to_json(doc)?, vec![])),
+        Format::NativeJson => {
+            let project = Project {
+                sheets: vec![ProjectSheet { label: doc.network.name.clone(), doc: doc.clone() }],
+                active: 0,
+            };
+            Ok((native::project_to_json(&project)?, vec![]))
+        }
         Format::Xmlbif => xmlbif::to_xml(doc),
         Format::Xdsl => xdsl::to_xml(doc),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Project load/save (native JSON only)
+// ---------------------------------------------------------------------------
+
+pub fn load_project(path: &Path) -> Result<Project, IoError> {
+    let text = std::fs::read_to_string(path)?;
+    load_project_str(&text)
+}
+
+pub fn load_project_str(text: &str) -> Result<Project, IoError> {
+    native::project_from_json(text)
+}
+
+pub fn save_project(project: &Project, path: &Path) -> Result<(), IoError> {
+    let text = save_project_str(project)?;
+    std::fs::write(path, text)?;
+    Ok(())
+}
+
+pub fn save_project_str(project: &Project) -> Result<String, IoError> {
+    native::project_to_json(project)
 }

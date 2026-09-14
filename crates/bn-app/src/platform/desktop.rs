@@ -98,8 +98,9 @@ pub async fn run_structure_job(
 /// Desktop applies the outcome by clone-swap (NodeIds are shared).
 pub fn apply_structure_outcome(
     s: &mut Session,
+    tab_id: bn_session::TabId,
     outcome: StructureOutcome,
     started_seq: u64,
 ) -> Result<StructureLearnResult, CmdError> {
-    bn_session::ops::learn::apply_structure_outcome(s, outcome, started_seq)
+    bn_session::ops::learn::apply_structure_outcome(s, tab_id, outcome, started_seq)
 }

@@ -62,7 +62,7 @@ pub fn StructureLearnDialog() -> Element {
     let cfg = ALGOS.iter().find(|a| a.value == *algo.read()).unwrap();
     let chance_nodes: Vec<(NodeId, String)> = {
         let s = SESSION.read();
-        s.doc
+        s.doc()
             .net
             .nodes()
             .filter(|(_, n)| n.kind == NodeKind::Chance)
@@ -107,10 +107,11 @@ pub fn StructureLearnDialog() -> Element {
                     }
                 };
             let started_seq = input.started_seq;
+            let tab_id = input.tab_id;
             match crate::platform::run_structure_job(input, case_file).await {
                 Ok(outcome) => {
                     match exec_res(|s| {
-                        crate::platform::apply_structure_outcome(s, outcome, started_seq)
+                        crate::platform::apply_structure_outcome(s, tab_id, outcome, started_seq)
                     }) {
                         Ok(res) => {
                             for w in &res.warnings {
@@ -126,7 +127,7 @@ pub fn StructureLearnDialog() -> Element {
                     }
                 }
                 Err(e) => {
-                    SESSION.write().job_cancel = None; // clear the busy slot
+                    SESSION.write().active_tab_mut().job_cancel = None; // clear the busy slot
                     report.set(Some(format!("Learning crashed: {e}")));
                 }
             }
@@ -336,8 +337,8 @@ pub fn StructureLearnDialog() -> Element {
                                 div { class: "mb-1 font-medium", "Required (whitelist):" }
                                 for (i, &(p, c)) in required_edges.read().iter().enumerate() {
                                     {
-                                        let pname = SESSION.read().doc.net.node(p).name.clone();
-                                        let cname = SESSION.read().doc.net.node(c).name.clone();
+                                        let pname = SESSION.read().doc().net.node(p).name.clone();
+                                        let cname = SESSION.read().doc().net.node(c).name.clone();
                                         rsx! {
                                             div { class: "flex items-center gap-1",
                                                 span { class: "flex-1 font-mono", "{pname} → {cname}" }
@@ -415,8 +416,8 @@ pub fn StructureLearnDialog() -> Element {
                                 div { class: "mb-1 font-medium", "Forbidden (blacklist):" }
                                 for (i, &(p, c)) in forbidden_edges.read().iter().enumerate() {
                                     {
-                                        let pname = SESSION.read().doc.net.node(p).name.clone();
-                                        let cname = SESSION.read().doc.net.node(c).name.clone();
+                                        let pname = SESSION.read().doc().net.node(p).name.clone();
+                                        let cname = SESSION.read().doc().net.node(c).name.clone();
                                         rsx! {
                                             div { class: "flex items-center gap-1",
                                                 span { class: "flex-1 font-mono", "{pname} → {cname}" }

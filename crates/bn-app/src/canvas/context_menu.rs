@@ -73,13 +73,13 @@ pub fn ContextMenuHost() -> Element {
 fn NodeMenu(id: NodeId) -> Element {
     let (kind, display, has_finding) = {
         let s = SESSION.read();
-        if !s.doc.net.contains(id) {
+        if !s.doc().net.contains(id) {
             return rsx! {};
         }
         (
-            s.doc.net.node(id).kind,
-            s.doc.visual.get(id).map(|v| v.display).unwrap_or_default(),
-            s.doc.evidence.get(id).is_some(),
+            s.doc().net.node(id).kind,
+            s.doc().visual.get(id).map(|v| v.display).unwrap_or_default(),
+            s.doc().evidence.get(id).is_some(),
         )
     };
 
@@ -156,7 +156,7 @@ fn NodeMenu(id: NodeId) -> Element {
 fn NoteMenu(id: NoteId) -> Element {
     let current = {
         let s = SESSION.read();
-        let Some(n) = s.doc.notes.get(id) else { return rsx! {} };
+        let Some(n) = s.doc().notes.get(id) else { return rsx! {} };
         n.color
     };
 

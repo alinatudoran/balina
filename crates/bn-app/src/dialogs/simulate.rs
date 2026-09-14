@@ -23,7 +23,7 @@ pub fn SimulateDialog() -> Element {
             let Some(fh) = picked else { return };
             let path = fh.path().to_path_buf();
             running.set(true);
-            let net = SESSION.read().doc.net.clone();
+            let net = SESSION.read().doc().net.clone();
             let (count, pct) = (*n.read(), *missing_pct.read());
             let result = tokio::task::spawn_blocking(move || {
                 bn_session::ops::learn::simulate_cases_to_file(&net, path, count, pct)
@@ -46,7 +46,7 @@ pub fn SimulateDialog() -> Element {
     #[cfg(target_arch = "wasm32")]
     let generate = move |_| {
         running.set(true);
-        let net = SESSION.read().doc.net.clone();
+        let net = SESSION.read().doc().net.clone();
         let (count, pct) = (*n.read(), *missing_pct.read());
         match bn_session::ops::learn::simulate_cases_csv(&net, count, pct) {
             Ok(csv) => {

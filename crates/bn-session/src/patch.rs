@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::doc::Dirt;
 use crate::error::CmdError;
-use crate::session::Session;
+use crate::session::{Session, TabId};
 use crate::views::StructureLearnResult;
 
 /// One node whose parent set and/or table changed during learning.
@@ -60,27 +60,28 @@ pub fn structure_patch(before: &Network, after: &Network) -> StructurePatch {
 /// of `apply_structure_outcome`. Always clears the busy slot.
 pub fn apply_structure_patch(
     s: &mut Session,
+    tab_id: TabId,
     patch: &StructurePatch,
     report: String,
     summary: String,
     warnings: Vec<String>,
     started_seq: u64,
 ) -> Result<StructureLearnResult, CmdError> {
-    s.job_cancel = None;
-    if s.doc.change_seq != started_seq {
+    s.tab_mut(tab_id).job_cancel = None;
+    if s.tab(tab_id).doc.change_seq != started_seq {
         return Err(CmdError::Stale(
             "network was edited while learning ran — result discarded; run again".into(),
         ));
     }
-    s.doc.begin_change();
-    match apply_nodes(&mut s.doc.net, patch) {
+    s.tab_mut(tab_id).doc.begin_change();
+    match apply_nodes(&mut s.tab_mut(tab_id).doc.net, patch) {
         Ok(()) => {
-            s.doc.ensure_visuals();
-            s.finish(Dirt::Structure);
+            s.tab_mut(tab_id).doc.ensure_visuals();
+            s.finish_tab(tab_id, Dirt::Structure);
             Ok(StructureLearnResult { report, summary, warnings })
         }
         Err(e) => {
-            s.doc.undo();
+            s.tab_mut(tab_id).doc.undo();
             Err(e)
         }
     }
