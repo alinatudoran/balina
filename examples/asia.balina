@@ -234,9 +234,9 @@
           "display": "BeliefBars",
           "color": null
         },
-        "Bronchitis": {
-          "x": 620.0,
-          "y": 200.0,
+        "VisitAsia": {
+          "x": 40.0,
+          "y": 40.0,
           "display": "BeliefBars",
           "color": null
         },
@@ -246,9 +246,15 @@
           "display": "BeliefBars",
           "color": null
         },
-        "VisitAsia": {
+        "Tuberculosis": {
           "x": 40.0,
-          "y": 40.0,
+          "y": 200.0,
+          "display": "BeliefBars",
+          "color": null
+        },
+        "LungCancer": {
+          "x": 300.0,
+          "y": 200.0,
           "display": "BeliefBars",
           "color": null
         },
@@ -258,33 +264,19 @@
           "display": "BeliefBars",
           "color": null
         },
-        "Tuberculosis": {
-          "x": 40.0,
-          "y": 200.0,
-          "display": "BeliefBars",
-          "color": null
-        },
         "Smoking": {
           "x": 480.0,
           "y": 40.0,
           "display": "BeliefBars",
           "color": null
         },
-        "LungCancer": {
-          "x": 300.0,
+        "Bronchitis": {
+          "x": 620.0,
           "y": 200.0,
           "display": "BeliefBars",
           "color": null
         }
       },
-      "notes": []
-    },
-    {
-      "label": "Footer",
-      "name": "Footer",
-      "comment": "",
-      "nodes": [],
-      "visual": {},
       "notes": []
     }
   ]
