@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use BALINA in your research or teaching, please cite it as below."
+type: software
+title: "BALINA: Bayesian And Logical Influence-diagram Network Application"
+abstract: "An interactive tool for building, analysing and learning Bayesian networks and influence diagrams. BALINA combines a graphical editor with exact probabilistic inference (junction tree), decision analysis (maximum expected utility and optimal policies), parameter learning (Dirichlet priors, EM), structure learning (PC, Hill-Climbing, Tabu Search, MMHC), sensitivity analysis and stochastic simulation. It reads and writes XMLBIF and GeNIe/SMILE files and CSV case data, and runs natively (Rust) and in the browser (WebAssembly)."
+authors:
+  - family-names: "Tudoran"
+    given-names: "Ana Alina"
+    orcid: "https://orcid.org/0000-0002-1380-4775"
+    affiliation: "Department of Economics and Business Economics, Aarhus BSS, Aarhus University, Denmark"
+version: "0.10"
+date-released: "2026-09-14"
+license: MIT
+repository-code: "https://github.com/alinatudoran/balina"
+url: "https://alinatudoran.github.io/balina"
+keywords:
+  - Bayesian networks
+  - influence diagrams
+  - probabilistic graphical models
+  - decision analysis
+  - structure learning
+  - business analytics
+  - Rust
+  - WebAssembly
