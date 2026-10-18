@@ -42,6 +42,20 @@ pub fn reorder_tab(s: &mut Session, id: TabId, new_index: usize) {
     s.modified = true;
 }
 
+/// Open a ready-built network (e.g. an AI draft) as a new unsaved tab and
+/// switch to it. Layout comes from `Document::from_io_document`'s topo-depth
+/// auto-placement, the same path a loaded file without positions takes.
+pub fn add_tab_with_network(s: &mut Session, net: bn_core::model::Network) -> TabId {
+    let iodoc = bn_core::io::Document { network: net, visual: Default::default() };
+    let mut tab = Tab::new();
+    tab.doc = crate::doc::Document::from_io_document(iodoc, None);
+    tab.doc.modified = true;
+    let id = s.insert_tab(tab);
+    s.set_active(id);
+    s.finish(Dirt::Structure);
+    id
+}
+
 /// Duplicate a tab (clone the document, fresh bridge) and switch to it.
 pub fn duplicate_tab(s: &mut Session, id: TabId) -> Result<TabId, CmdError> {
     let src = s.tab(id);

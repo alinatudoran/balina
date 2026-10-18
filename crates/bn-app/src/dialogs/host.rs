@@ -62,6 +62,22 @@ pub fn DialogHost() -> Element {
         DialogDesc::About => rsx! {
             crate::dialogs::misc::AboutDialog {}
         },
+        #[cfg(not(target_arch = "wasm32"))]
+        DialogDesc::AiSettings => rsx! {
+            crate::dialogs::ai_settings::AiSettingsDialog {}
+        },
+        #[cfg(not(target_arch = "wasm32"))]
+        DialogDesc::AiDraft => rsx! {
+            crate::dialogs::ai_draft::AiDraftDialog {}
+        },
+        #[cfg(not(target_arch = "wasm32"))]
+        DialogDesc::AiEvidence => rsx! {
+            crate::dialogs::ai_evidence::AiEvidenceDialog {}
+        },
+        #[cfg(not(target_arch = "wasm32"))]
+        DialogDesc::LayaDownload { checkpoint } => rsx! {
+            crate::dialogs::laya_download::LayaDownloadDialog { checkpoint }
+        },
         #[cfg(target_arch = "wasm32")]
         DialogDesc::SaveAsWeb => rsx! {
             crate::dialogs::save_web::SaveAsWebDialog {}

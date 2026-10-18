@@ -23,3 +23,24 @@ pub fn set_cpt(s: &mut Session, node: NodeId, data: Vec<f64>) -> Result<(), CmdE
     s.finish(Dirt::Params);
     Ok(())
 }
+
+/// Accept an AI-suggested CPT: the table plus a weak Dirichlet prior
+/// (experience ε = 1 per parent configuration), so counting/EM learning lets
+/// real data override the suggestion. One undoable step.
+pub fn set_cpt_ai(s: &mut Session, node: NodeId, data: Vec<f64>) -> Result<(), CmdError> {
+    check_node(&s.doc().net, node)?;
+    s.doc_mut().begin_change();
+    let rows = s.doc().net.row_count(node);
+    let result = s
+        .doc_mut()
+        .net
+        .set_table(node, Table { data })
+        .and_then(|()| s.doc_mut().net.set_experience(node, Some(vec![1.0; rows])));
+    if let Err(e) = result {
+        s.doc_mut().undo();
+        return Err(e.into());
+    }
+    s.doc_mut().net.normalize_table(node);
+    s.finish(Dirt::Params);
+    Ok(())
+}

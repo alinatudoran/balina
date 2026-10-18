@@ -158,13 +158,14 @@ pub fn TextInput(
     #[props(default = String::new())] class: String,
     #[props(optional)] placeholder: Option<String>,
     #[props(default = false)] autofocus: bool,
+    #[props(default = false)] password: bool,
     #[props(optional)] id: Option<String>,
 ) -> Element {
     rsx! {
         input {
             id,
             class: "{INPUT} {class}",
-            r#type: "text",
+            r#type: if password { "password" } else { "text" },
             value: "{value}",
             placeholder,
             autofocus,
