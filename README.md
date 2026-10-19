@@ -42,6 +42,11 @@ Demos available for the WebAssembly version:
 - Sensitivity to Findings: Identifies the most informative variables using mutual information, entropy reduction, and variance reduction metrics.
 - Stochastic Sampling: Forward sampling and likelihood-weighted simulation for generating synthetic datasets and case files.
 
+**AI-assisted modelling** (desktop only, experimental — see [AI features](#ai-features))
+- Draft Network from Text: turns a plain-language description into a draft network (nodes, states, arcs) using an LLM of your choice.
+- Enter Findings from Text: reads a case note and suggests findings for each chance node, using a local [Laya](https://github.com/NandhaKishorM/laya) model; findings the text states outright can become hard evidence.
+- Suggest CPT with AI: fills a CPT from your verbal judgments ("cancer is very likely if both…") using local Laya.
+
 **File formats**
 - Native Format: .balina (human-readable JSON format).
 - Standard Interchange Formats: Import and export support for XMLBIF v0.3 and GeNIe/SMILE .xdsl files (preserving layout coordinates).
@@ -119,9 +124,7 @@ classes fail silently (the element renders unstyled).
 5. Open `examples/umbrella.balina`, then Tools → *Solve influence diagram*
    to see the optimal policy (take the umbrella iff the forecast is rainy).
 
-
-
-
+   
 ## Testing
 
 ```sh
