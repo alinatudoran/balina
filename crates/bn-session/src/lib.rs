@@ -6,6 +6,9 @@
 //! functions in [`ops`] — exactly one op per user gesture — then re-renders
 //! from the session state; there is no serialization boundary.
 
+pub mod ai_cpt;
+pub mod ai_draft;
+pub mod ai_evidence;
 pub mod doc;
 pub mod engine_bridge;
 pub mod error;

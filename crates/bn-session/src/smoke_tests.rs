@@ -485,3 +485,115 @@ fn notes_roundtrip_through_io_document() {
     let n = back.notes.values().next().unwrap();
     assert_eq!(*n, s.doc().notes[id]);
 }
+
+#[test]
+fn ai_draft_opens_as_new_tab_with_layout_and_beliefs() {
+    let draft = crate::ai_draft::parse_draft(
+        r#"{"name": "Draft", "nodes": [
+            {"name": "A", "states": ["y", "n"]},
+            {"name": "B", "states": ["y", "n"], "parents": ["A"]}
+        ]}"#,
+    )
+    .unwrap();
+    let net = crate::ai_draft::build_network(&draft).unwrap();
+
+    let mut s = Session::new();
+    let before = s.active_id();
+    let id = ops::tab::add_tab_with_network(&mut s, net);
+    assert_ne!(id, before);
+    assert_eq!(s.active_id(), id);
+    assert_eq!(s.tab_label(id), "Draft");
+    assert!(s.doc().modified && s.doc().path.is_none(), "draft tab must be unsaved");
+    // Every node got an auto-layout position, and uniform CPTs compile to
+    // uniform beliefs through the normal engine path.
+    for node in s.doc().net.node_ids() {
+        assert!(s.doc().visual.contains_key(node));
+    }
+    let b = s.doc().net.find_by_name("B").unwrap();
+    let beliefs = s.bridge().beliefs.get(b).expect("beliefs computed").clone();
+    for p in beliefs {
+        assert!((p - 0.5).abs() < 1e-9);
+    }
+}
+
+#[test]
+fn ai_cpt_accept_writes_table_and_dirichlet_experience() {
+    let mut s = Session::new();
+    *s.doc_mut() = load_asia();
+    let tub = s.doc().net.find_by_name("Tuberculosis").expect("asia has `Tuberculosis`");
+    let rows = s.doc().net.row_count(tub);
+    let out = s.doc().net.node(tub).out_card();
+
+    // Sloppy sums are normalized on accept, like the manual editor path.
+    let data: Vec<f64> = (0..rows).flat_map(|_| vec![9.0, 1.0][..out.min(2)].to_vec()).collect();
+    ops::cpt::set_cpt_ai(&mut s, tub, data).unwrap();
+
+    let n = s.doc().net.node(tub);
+    assert_eq!(n.experience, Some(vec![1.0; rows]), "ε = 1 pseudo-count per row");
+    for r in 0..rows {
+        let row = &n.table.data[r * out..(r + 1) * out];
+        assert!((row.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert!((row[0] - 0.9).abs() < 1e-12);
+    }
+    // One undo reverts both the table and the experience.
+    ops::edit::undo(&mut s);
+    assert_eq!(s.doc().net.node(tub).experience, None);
+}
+
+#[test]
+fn ai_evidence_batch_applies_as_one_undo_step() {
+    let mut s = Session::new();
+    *s.doc_mut() = load_asia();
+    let smoking = s.doc().net.find_by_name("Smoking").unwrap();
+    let dyspnea = s.doc().net.find_by_name("Dyspnea").unwrap();
+
+    ops::evidence::set_likelihood_findings(
+        &mut s,
+        vec![(smoking, vec![0.9, 0.1]), (dyspnea, vec![0.3, 0.7])],
+    )
+    .unwrap();
+    assert!(s.doc().evidence.get(smoking).is_some());
+    assert!(s.doc().evidence.get(dyspnea).is_some());
+
+    // One undo retracts the whole batch.
+    ops::edit::undo(&mut s);
+    assert!(s.doc().evidence.get(smoking).is_none());
+    assert!(s.doc().evidence.get(dyspnea).is_none());
+
+    // All-or-nothing: one bad vector rejects the batch before any applies.
+    let err = ops::evidence::set_likelihood_findings(
+        &mut s,
+        vec![(smoking, vec![0.9, 0.1]), (dyspnea, vec![0.0, 0.0])],
+    );
+    assert!(err.is_err());
+    assert!(s.doc().evidence.get(smoking).is_none());
+}
+
+#[test]
+fn ai_evidence_mixed_hard_and_likelihood_batch() {
+    use bn_core::inference::Finding;
+    let mut s = Session::new();
+    *s.doc_mut() = load_asia();
+    let smoking = s.doc().net.find_by_name("Smoking").unwrap();
+    let dyspnea = s.doc().net.find_by_name("Dyspnea").unwrap();
+
+    ops::evidence::set_findings(
+        &mut s,
+        vec![(smoking, Finding::Hard(1)), (dyspnea, Finding::Likelihood(vec![0.3, 0.7]))],
+    )
+    .unwrap();
+    assert!(matches!(s.doc().evidence.get(smoking), Some(Finding::Hard(1))));
+    assert!(matches!(s.doc().evidence.get(dyspnea), Some(Finding::Likelihood(_))));
+
+    ops::edit::undo(&mut s);
+    assert!(s.doc().evidence.get(smoking).is_none());
+    assert!(s.doc().evidence.get(dyspnea).is_none());
+
+    // An out-of-range hard state rejects the whole batch.
+    let err = ops::evidence::set_findings(
+        &mut s,
+        vec![(dyspnea, Finding::Likelihood(vec![0.3, 0.7])), (smoking, Finding::Hard(9))],
+    );
+    assert!(err.is_err());
+    assert!(s.doc().evidence.get(dyspnea).is_none());
+}

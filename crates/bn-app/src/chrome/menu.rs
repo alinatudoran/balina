@@ -130,7 +130,18 @@ pub fn build() -> Menu {
         ])
         .unwrap();
 
-    menu.append_items(&[&file, &edit, &network, &cases, &tools]).unwrap();
+    // Experimental AI features live under one menu so they stay visibly
+    // fenced; grows an item per feature phase.
+    let ai = Submenu::new("A&I", true);
+    ai.append_items(&[
+        &item("ai.draftNetwork", "Draft Network from Text…"),
+        &item("ai.enterFindings", "Enter Findings from Text…"),
+        &PredefinedMenuItem::separator(),
+        &item("ai.settings", "AI Settings…"),
+    ])
+    .unwrap();
+
+    menu.append_items(&[&file, &edit, &network, &cases, &tools, &ai]).unwrap();
 
     #[cfg(not(target_os = "macos"))]
     {
@@ -280,6 +291,12 @@ pub fn route(id: &str) {
             let id = SESSION.read().active_id();
             crate::chrome::tab_bar::duplicate_tab(id);
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        "ai.settings" => open_dialog(DialogDesc::AiSettings),
+        #[cfg(not(target_arch = "wasm32"))]
+        "ai.draftNetwork" => open_dialog(DialogDesc::AiDraft),
+        #[cfg(not(target_arch = "wasm32"))]
+        "ai.enterFindings" => open_dialog(DialogDesc::AiEvidence),
         "help.about" => open_dialog(DialogDesc::About),
         _ => {
             state::log_message(format!("Unhandled menu id: {id}"));
