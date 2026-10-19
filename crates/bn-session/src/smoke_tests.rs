@@ -568,3 +568,32 @@ fn ai_evidence_batch_applies_as_one_undo_step() {
     assert!(err.is_err());
     assert!(s.doc().evidence.get(smoking).is_none());
 }
+
+#[test]
+fn ai_evidence_mixed_hard_and_likelihood_batch() {
+    use bn_core::inference::Finding;
+    let mut s = Session::new();
+    *s.doc_mut() = load_asia();
+    let smoking = s.doc().net.find_by_name("Smoking").unwrap();
+    let dyspnea = s.doc().net.find_by_name("Dyspnea").unwrap();
+
+    ops::evidence::set_findings(
+        &mut s,
+        vec![(smoking, Finding::Hard(1)), (dyspnea, Finding::Likelihood(vec![0.3, 0.7]))],
+    )
+    .unwrap();
+    assert!(matches!(s.doc().evidence.get(smoking), Some(Finding::Hard(1))));
+    assert!(matches!(s.doc().evidence.get(dyspnea), Some(Finding::Likelihood(_))));
+
+    ops::edit::undo(&mut s);
+    assert!(s.doc().evidence.get(smoking).is_none());
+    assert!(s.doc().evidence.get(dyspnea).is_none());
+
+    // An out-of-range hard state rejects the whole batch.
+    let err = ops::evidence::set_findings(
+        &mut s,
+        vec![(dyspnea, Finding::Likelihood(vec![0.3, 0.7])), (smoking, Finding::Hard(9))],
+    );
+    assert!(err.is_err());
+    assert!(s.doc().evidence.get(dyspnea).is_none());
+}

@@ -23,7 +23,7 @@ pub struct NodeQuery {
 }
 
 impl NodeQuery {
-    fn description(&self) -> String {
+    pub(crate) fn description(&self) -> String {
         let mut d = format!("`{}`", self.name);
         if !self.title.is_empty() {
             d.push_str(&format!(" ({})", self.title));

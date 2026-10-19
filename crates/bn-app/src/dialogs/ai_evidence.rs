@@ -1,11 +1,14 @@
 //! Enter-findings-from-text dialog: paste a case note, the structured model
 //! judges every chance node (with an explicit abstain option), and the
 //! suggested distributions land in a review list — editable, per-node
-//! include checkboxes — applied as likelihood findings in one undoable step.
+//! include checkboxes — applied in one undoable step. When a text model is
+//! configured, an optional second pass marks findings the text states
+//! outright; those snap to 1/0 and are applied as hard findings.
 
+use bn_core::inference::Finding;
 use dioxus::prelude::*;
 
-use crate::ai::{evidence, settings};
+use crate::ai::{client, definite, evidence, settings};
 use crate::state::{close_dialog, exec, log_message, SESSION};
 use crate::ui::{Modal, TextArea, TextInput, BTN, BTN_PRIMARY};
 
@@ -18,6 +21,9 @@ struct Review {
     states: Vec<String>,
     values: Vec<String>,
     include: bool,
+    /// Text model confirmed the state; applied as a hard finding. Editing
+    /// any value clears it.
+    definite: bool,
 }
 
 #[component]
@@ -27,6 +33,14 @@ pub fn AiEvidenceDialog() -> Element {
     let mut error = use_signal(String::new);
     // None = paste step; Some = review step (with the abstained node names).
     let mut review: Signal<Option<(Vec<Review>, Vec<String>)>> = use_signal(|| None);
+    // Text model usable for the definite-findings pass (provider label if so).
+    let text_provider = use_hook(|| {
+        let t = settings::load().text;
+        client::build_llm_model(&t).is_ok().then(|| t.provider.label())
+    });
+    let mut use_definite = use_signal(|| true);
+    let mut progress = use_signal(String::new);
+    let mut notice = use_signal(String::new);
 
     let on_analyze = move |_| {
         let nodes: Vec<evidence::NodeQuery> = {
@@ -47,11 +61,37 @@ pub fn AiEvidenceDialog() -> Element {
                 .collect()
         };
         let doc_text = text.read().trim().to_string();
-        let cfg = settings::load().structured;
+        let all = settings::load();
+        let (cfg, text_cfg) = (all.structured, all.text);
+        let check_definite = text_provider.is_some() && *use_definite.read();
         running.set(true);
         error.set(String::new());
+        notice.set(String::new());
+        progress.set(
+            "Asking the local structured model (first run loads it — a few seconds)…".into(),
+        );
         spawn(async move {
-            let result = evidence::suggest_evidence(cfg, nodes.clone(), doc_text).await;
+            let result =
+                evidence::suggest_evidence(cfg, nodes.clone(), doc_text.clone()).await;
+            let mut definite_found: Vec<(String, usize)> = Vec::new();
+            if check_definite
+                && let Ok(found) = &result
+                && !found.is_empty()
+            {
+                progress.set("Checking definite findings with the Text model…".into());
+                let queried: Vec<(evidence::NodeQuery, Vec<f64>)> = found
+                    .iter()
+                    .filter_map(|(name, probs)| {
+                        let q = nodes.iter().find(|n| n.name == *name)?;
+                        Some((q.clone(), probs.clone()))
+                    })
+                    .collect();
+                match definite::detect_definite(text_cfg, doc_text, queried).await {
+                    Ok(d) => definite_found = d,
+                    Err(e) => notice
+                        .set(format!("Text model check failed ({e}); showing Laya values.")),
+                }
+            }
             running.set(false);
             match result {
                 Err(crate::ai::laya_local::LayaError::NotInstalled(checkpoint)) => {
@@ -72,12 +112,23 @@ pub fn AiEvidenceDialog() -> Element {
                         .iter()
                         .map(|(name, probs)| {
                             let q = nodes.iter().find(|n| n.name == *name).expect("validated");
+                            let hard = definite_found
+                                .iter()
+                                .find(|(n, _)| n == name)
+                                .map(|&(_, i)| i);
+                            let values = match hard {
+                                Some(i) => (0..probs.len())
+                                    .map(|k| if k == i { "1" } else { "0" }.to_string())
+                                    .collect(),
+                                None => probs.iter().map(|p| format!("{p:.3}")).collect(),
+                            };
                             Review {
                                 name: name.clone(),
                                 title: q.title.clone(),
                                 states: q.states.clone(),
-                                values: probs.iter().map(|p| format!("{p:.3}")).collect(),
+                                values,
                                 include: true,
+                                definite: hard.is_some(),
                             }
                         })
                         .collect();
@@ -95,7 +146,7 @@ pub fn AiEvidenceDialog() -> Element {
 
     let apply = move |_| {
         let Some((reviews, _)) = review.read().clone() else { return };
-        let findings: Vec<(bn_core::model::NodeId, Vec<f64>)> = {
+        let findings: Vec<(bn_core::model::NodeId, Finding)> = {
             let s = SESSION.read();
             reviews
                 .iter()
@@ -104,13 +155,24 @@ pub fn AiEvidenceDialog() -> Element {
                     let id = s.doc().net.find_by_name(&r.name)?;
                     let vals: Vec<f64> =
                         r.values.iter().filter_map(|v| v.trim().parse::<f64>().ok()).collect();
-                    (vals.len() == r.states.len()).then_some((id, vals))
+                    if vals.len() != r.states.len() {
+                        return None;
+                    }
+                    // A definite row is one-hot by construction (edits clear the flag).
+                    let finding = match vals.iter().position(|&v| v > 0.0) {
+                        Some(i) if r.definite => Finding::Hard(i),
+                        _ => Finding::Likelihood(vals),
+                    };
+                    Some((id, finding))
                 })
                 .collect()
         };
-        let n = findings.len();
-        if exec(|s| bn_session::ops::evidence::set_likelihood_findings(s, findings)).is_some() {
-            log_message(format!("Applied {n} AI-extracted likelihood findings."));
+        let hard = findings.iter().filter(|(_, f)| matches!(f, Finding::Hard(_))).count();
+        let soft = findings.len() - hard;
+        if exec(|s| bn_session::ops::evidence::set_findings(s, findings)).is_some() {
+            log_message(format!(
+                "Applied AI-extracted findings: {hard} hard, {soft} likelihood."
+            ));
             close_dialog();
         }
     };
@@ -161,8 +223,13 @@ pub fn AiEvidenceDialog() -> Element {
                     p { class: "text-xs text-muted-foreground",
                         "Paste a case note or document. The local Laya model judges what the \
                          text says about each chance node (or abstains); you review and edit \
-                         the distributions before they become likelihood findings. Nothing \
-                         leaves this machine."
+                         the distributions before they become likelihood findings."
+                        if text_provider.is_some() && *use_definite.read() {
+                            " The text is also sent to the Text model to spot findings it states \
+                             outright; those become hard findings."
+                        } else {
+                            " Nothing leaves this machine."
+                        }
                     }
                     TextArea {
                         rows: 10,
@@ -170,16 +237,28 @@ pub fn AiEvidenceDialog() -> Element {
                         autofocus: true,
                         oninput: move |v| text.set(v),
                     }
-                    if *running.read() {
-                        div { class: "text-xs text-muted-foreground",
-                            "Asking the local structured model (first run loads it — a few \
-                             seconds)…"
+                    if let Some(provider) = text_provider {
+                        label { class: "flex items-center gap-2 text-xs",
+                            input {
+                                r#type: "checkbox",
+                                checked: *use_definite.read(),
+                                onchange: move |ev| use_definite.set(ev.checked()),
+                            }
+                            "Use the Text model to detect definite findings (sends the text to \
+                             {provider})"
                         }
+                    }
+                    if *running.read() {
+                        div { class: "text-xs text-muted-foreground", "{progress}" }
                     }
                 } else if let Some((reviews, abstained)) = review.read().clone() {
                     p { class: "text-xs text-muted-foreground",
                         "AI-suggested likelihoods — review, edit, untick what you don't trust. \
-                         Apply sets them as soft evidence (one undo step)."
+                         Apply sets them as soft evidence, and rows marked definite as hard \
+                         findings (one undo step)."
+                    }
+                    if !notice.read().is_empty() {
+                        p { class: "text-xs text-amber-600", "{notice}" }
                     }
                     div { class: "max-h-[50vh] space-y-2 overflow-auto pr-1",
                         for (ri, r) in reviews.iter().cloned().enumerate() {
@@ -200,6 +279,13 @@ pub fn AiEvidenceDialog() -> Element {
                                             "{r.title}"
                                         }
                                     }
+                                    if r.definite {
+                                        span {
+                                            class: "rounded bg-emerald-100 px-1 text-[10px] font-normal text-emerald-800",
+                                            title: "The Text model found this stated outright — applied as a hard finding",
+                                            "definite"
+                                        }
+                                    }
                                 }
                                 div { class: "mt-1 flex flex-wrap gap-x-4 gap-y-1 pl-6",
                                     for (si, sname) in r.states.iter().cloned().enumerate() {
@@ -213,6 +299,7 @@ pub fn AiEvidenceDialog() -> Element {
                                                 oninput: move |v| {
                                                     if let Some((rs, _)) = review.write().as_mut() {
                                                         rs[ri].values[si] = v;
+                                                        rs[ri].definite = false;
                                                     }
                                                 },
                                             }

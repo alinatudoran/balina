@@ -88,6 +88,26 @@ pub fn handle_keydown(ev: KeyboardEvent) {
 
     // Edit hotkeys are ignored while a text input has focus.
     if *TYPING.read() {
+        // macOS webviews only run Cmd+A / Cmd+Z editing commands through
+        // native menu items, and those have no accelerators (the canvas owns
+        // them), so drive the focused input by hand.
+        #[cfg(target_os = "macos")]
+        {
+            let mods = data.modifiers();
+            let shift = mods.contains(Modifiers::SHIFT);
+            if mods.contains(Modifiers::META) && let Key::Character(ref k) = key {
+                let js = match (k.to_ascii_lowercase().as_str(), shift) {
+                    ("a", _) => Some("document.activeElement?.select?.()"),
+                    ("z", false) => Some("document.execCommand('undo')"),
+                    ("z", true) => Some("document.execCommand('redo')"),
+                    _ => None,
+                };
+                if let Some(js) = js {
+                    ev.prevent_default();
+                    let _ = dioxus::document::eval(js);
+                }
+            }
+        }
         return;
     }
 

@@ -638,7 +638,7 @@ dependencies = [
 
 [[package]]
 name = "bn-app"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "ai",
  "base64 0.22.1",
@@ -667,7 +667,7 @@ dependencies = [
 
 [[package]]
 name = "bn-core"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "csv",
  "quick-xml",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "bn-session"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bn-core",
  "csv",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "bn-worker"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bn-core",
  "bn-session",

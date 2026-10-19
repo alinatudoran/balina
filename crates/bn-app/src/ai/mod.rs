@@ -6,6 +6,7 @@
 
 pub mod client;
 pub mod cpt;
+pub mod definite;
 pub mod draft;
 pub mod evidence;
 pub mod laya_local;

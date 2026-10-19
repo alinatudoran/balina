@@ -1,5 +1,6 @@
 //! Evidence ops (Dirt::Evidence).
 
+use bn_core::inference::Finding;
 use bn_core::model::NodeId;
 
 use crate::error::CmdError;
@@ -45,30 +46,48 @@ pub fn set_likelihood_findings(
     s: &mut Session,
     findings: Vec<(NodeId, Vec<f64>)>,
 ) -> Result<(), CmdError> {
+    set_findings(s, findings.into_iter().map(|(n, l)| (n, Finding::Likelihood(l))).collect())
+}
+
+/// Apply a mixed batch of hard and likelihood findings as ONE undoable step
+/// (AI-extracted text evidence with definite rows snapped to hard). Same
+/// all-or-nothing validation as `set_likelihood_findings`.
+pub fn set_findings(s: &mut Session, findings: Vec<(NodeId, Finding)>) -> Result<(), CmdError> {
     if findings.is_empty() {
         return Err(CmdError::BadRequest("no findings to apply".into()));
     }
-    for (node, likelihood) in &findings {
+    for (node, finding) in &findings {
         check_node(&s.doc().net, *node)?;
         let name = &s.doc().net.node(*node).name;
         let card = s.doc().net.node(*node).n_states();
-        if likelihood.len() != card {
-            return Err(CmdError::BadRequest(format!(
-                "`{name}`: likelihood needs {card} values, got {}",
-                likelihood.len()
-            )));
-        }
-        if likelihood.iter().any(|v| !v.is_finite() || *v < 0.0)
-            || !likelihood.iter().any(|v| *v > 0.0)
-        {
-            return Err(CmdError::BadRequest(format!(
-                "`{name}`: likelihood values must be finite, ≥ 0, with at least one > 0"
-            )));
+        match finding {
+            Finding::Hard(state) => {
+                if *state >= card {
+                    return Err(CmdError::BadRequest(format!(
+                        "`{name}`: state index {state} out of range"
+                    )));
+                }
+            }
+            Finding::Likelihood(likelihood) => {
+                if likelihood.len() != card {
+                    return Err(CmdError::BadRequest(format!(
+                        "`{name}`: likelihood needs {card} values, got {}",
+                        likelihood.len()
+                    )));
+                }
+                if likelihood.iter().any(|v| !v.is_finite() || *v < 0.0)
+                    || !likelihood.iter().any(|v| *v > 0.0)
+                {
+                    return Err(CmdError::BadRequest(format!(
+                        "`{name}`: likelihood values must be finite, ≥ 0, with at least one > 0"
+                    )));
+                }
+            }
         }
     }
     s.doc_mut().begin_change();
-    for (node, likelihood) in findings {
-        s.doc_mut().evidence.set(node, bn_core::inference::Finding::Likelihood(likelihood));
+    for (node, finding) in findings {
+        s.doc_mut().evidence.set(node, finding);
     }
     s.finish(crate::doc::Dirt::Evidence);
     Ok(())

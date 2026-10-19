@@ -71,7 +71,7 @@ fn StructuredSection(checkpoint: LayaCheckpoint, on_change: EventHandler<LayaChe
     let installed = checkpoint.is_installed();
 
     rsx! {
-        div { class: "space-y-2",
+        div { class: "mt-4 space-y-2",
             div {
                 h3 { class: "font-semibold", "Structured model (local Laya)" }
                 p { class: "text-xs text-muted-foreground",

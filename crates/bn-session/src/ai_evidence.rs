@@ -79,6 +79,52 @@ pub fn validate_findings(
     if errors.is_empty() { Ok(out) } else { Err(errors) }
 }
 
+#[derive(Deserialize)]
+struct DefiniteReply {
+    definite: Vec<DefiniteEntry>,
+}
+
+#[derive(Deserialize)]
+struct DefiniteEntry {
+    node: String,
+    state: String,
+}
+
+/// Parse `{"definite": [{"node": ..., "state": ...}]}` — the text model's
+/// list of findings the text states outright — tolerating fences and prose.
+pub fn parse_definite_reply(reply: &str) -> Result<Vec<(String, String)>, String> {
+    let start = reply.find('{').ok_or("reply contains no JSON object")?;
+    let end = reply.rfind('}').ok_or("reply contains no JSON object")?;
+    if start >= end {
+        return Err("reply contains no JSON object".into());
+    }
+    serde_json::from_str::<DefiniteReply>(&reply[start..=end])
+        .map(|r| r.definite.into_iter().map(|d| (d.node, d.state)).collect())
+        .map_err(|e| format!("invalid definite-findings JSON: {e}"))
+}
+
+/// Map `(node, state)` pairs onto state indices of `(name, states)` nodes.
+/// Snapping only refines suggestions, so unknown nodes/states and nodes
+/// named more than once are dropped instead of failing the extraction.
+pub fn resolve_definite(
+    pairs: Vec<(String, String)>,
+    nodes: &[(String, Vec<String>)],
+) -> Vec<(String, usize)> {
+    let mut counts = std::collections::HashMap::new();
+    for (name, _) in &pairs {
+        *counts.entry(name.clone()).or_insert(0usize) += 1;
+    }
+    pairs
+        .into_iter()
+        .filter(|(name, _)| counts[name] == 1)
+        .filter_map(|(name, state)| {
+            let (_, states) = nodes.iter().find(|(n, _)| *n == name)?;
+            let idx = states.iter().position(|s| s.eq_ignore_ascii_case(state.trim()))?;
+            Some((name, idx))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +193,36 @@ mod tests {
         .unwrap_err();
         assert!(errs.iter().any(|e| e.contains("all values are zero")), "{errs:?}");
         assert!(errs.iter().any(|e| e.contains("more than once")), "{errs:?}");
+    }
+
+    #[test]
+    fn parse_definite_tolerates_fence_and_empty() {
+        let pairs = parse_definite_reply(
+            "Sure:\n```json\n{\"definite\": [{\"node\": \"Smoking\", \"state\": \"no\"}]}\n```",
+        )
+        .unwrap();
+        assert_eq!(pairs, vec![("Smoking".to_string(), "no".to_string())]);
+        assert!(parse_definite_reply("{\"definite\": []}").unwrap().is_empty());
+        assert!(parse_definite_reply("nothing definite").is_err());
+    }
+
+    #[test]
+    fn resolve_definite_drops_unknown_and_duplicates() {
+        let nodes = vec![
+            ("Smoking".to_string(), vec!["yes".to_string(), "no".to_string()]),
+            ("Asia".to_string(), vec!["yes".to_string(), "no".to_string()]),
+            ("Dyspnea".to_string(), vec!["present".to_string(), "absent".to_string()]),
+        ];
+        let resolved = resolve_definite(
+            vec![
+                ("Smoking".into(), " No".into()),
+                ("Ghost".into(), "yes".into()),
+                ("Dyspnea".into(), "maybe".into()),
+                ("Asia".into(), "yes".into()),
+                ("Asia".into(), "no".into()),
+            ],
+            &nodes,
+        );
+        assert_eq!(resolved, vec![("Smoking".to_string(), 1)]);
     }
 }
