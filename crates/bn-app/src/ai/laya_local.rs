@@ -130,36 +130,89 @@ impl std::fmt::Display for LayaError {
 
 // ---- download ---------------------------------------------------------------
 
-/// Fetch every checkpoint file, streaming to `<file>.part` and renaming on
-/// completion so an interrupted download never looks installed. `progress`
-/// gets `(bytes downloaded, approx total)`; `cancel` is polled per chunk.
-/// Runs on the caller's task — safe to update UI signals from `progress`.
+/// No data for this long is a dead connection, not a slow one.
+const STALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+/// How often the cancel flag is checked while NO data is arriving (a stalled
+/// connection must not freeze the Cancel button).
+const CANCEL_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Fetch every checkpoint file into a staging directory, swapped into place
+/// only after ALL files arrived — an interrupted (re-)download can never
+/// leave a mixed-version install that still reads as installed. `progress`
+/// gets `(bytes downloaded, approx total)`; `cancel` is polled continuously,
+/// stalled connections included. Runs on the caller's task — safe to update
+/// UI signals from `progress`.
 pub async fn download(
     cp: LayaCheckpoint,
     progress: impl Fn(u64, u64),
-    cancel: Arc<AtomicBool>,
+    cancel: &AtomicBool,
 ) -> Result<(), LayaError> {
     let total = cp.approx_total_bytes();
-    let client = reqwest::Client::new();
-    let mut downloaded: u64 = 0;
-    for (url, path) in cp.file_plan() {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| LayaError::Other(e.to_string()))?;
-        }
-        let part = path.with_extension("part");
-        let result = fetch_one(&client, &url, &part, &mut downloaded, total, &progress, &cancel)
-            .await;
-        if let Err(e) = result {
-            let _ = std::fs::remove_file(&part);
-            return Err(e);
-        }
-        std::fs::rename(&part, &path).map_err(|e| LayaError::Other(e.to_string()))?;
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| LayaError::Other(e.to_string()))?;
+    let staging = staging_dir(cp);
+    let _ = std::fs::remove_dir_all(&staging);
+    let result = fetch_all(&client, cp, &staging, total, &progress, cancel).await;
+    if let Err(e) = result {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(e);
     }
-    // A fresh download invalidates any cached agent of this checkpoint.
+    // Drop the cached agent BEFORE the swap so nothing serves (or re-caches)
+    // a half-swapped directory.
     if let Ok(mut slot) = AGENT.lock()
         && slot.as_ref().is_some_and(|(c, _)| *c == cp)
     {
         *slot = None;
+    }
+    let dir = cp.dir();
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| LayaError::Other(e.to_string()))?;
+    }
+    std::fs::rename(&staging, &dir).map_err(|e| LayaError::Other(e.to_string()))?;
+    Ok(())
+}
+
+fn staging_dir(cp: LayaCheckpoint) -> PathBuf {
+    models_root().join(format!("{}.staging", cp.id()))
+}
+
+/// Remove leftovers of downloads the process never finished (app quit or the
+/// dialog's task dropped mid-transfer): staging directories, plus `.part`
+/// files from the pre-staging layout. Called once at startup.
+pub fn sweep_partial_downloads() {
+    if let Ok(entries) = std::fs::read_dir(models_root()) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() && p.extension().is_some_and(|x| x == "staging") {
+                let _ = std::fs::remove_dir_all(&p);
+            }
+        }
+    }
+    for cp in LayaCheckpoint::ALL {
+        for (_, path) in cp.file_plan() {
+            let _ = std::fs::remove_file(path.with_extension("part"));
+        }
+    }
+}
+
+async fn fetch_all(
+    client: &reqwest::Client,
+    cp: LayaCheckpoint,
+    staging: &std::path::Path,
+    total: u64,
+    progress: &impl Fn(u64, u64),
+    cancel: &AtomicBool,
+) -> Result<(), LayaError> {
+    let mut downloaded: u64 = 0;
+    for f in FILES {
+        let url = format!("{HF_BASE}/{}{f}", cp.hf_prefix());
+        let dest = staging.join(f);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| LayaError::Other(e.to_string()))?;
+        }
+        fetch_one(client, &url, &dest, &mut downloaded, total, progress, cancel).await?;
     }
     Ok(())
 }
@@ -167,7 +220,7 @@ pub async fn download(
 async fn fetch_one(
     client: &reqwest::Client,
     url: &str,
-    part: &std::path::Path,
+    dest: &std::path::Path,
     downloaded: &mut u64,
     total: u64,
     progress: &impl Fn(u64, u64),
@@ -175,16 +228,39 @@ async fn fetch_one(
 ) -> Result<(), LayaError> {
     use std::io::Write;
 
-    let mut resp = client
-        .get(url)
-        .send()
+    if cancel.load(Ordering::Relaxed) {
+        return Err(LayaError::Cancelled);
+    }
+    let mut resp = tokio::time::timeout(STALL_TIMEOUT, client.get(url).send())
         .await
+        .map_err(|_| LayaError::Other(format!("The request for {url} timed out.")))?
         .map_err(|e| LayaError::Other(e.to_string()))?;
     if !resp.status().is_success() {
         return Err(LayaError::Other(format!("HTTP {} for {url}", resp.status())));
     }
-    let mut file = std::fs::File::create(part).map_err(|e| LayaError::Other(e.to_string()))?;
-    while let Some(chunk) = resp.chunk().await.map_err(|e| LayaError::Other(e.to_string()))? {
+    let mut file = std::fs::File::create(dest).map_err(|e| LayaError::Other(e.to_string()))?;
+    let mut stalled = std::time::Duration::ZERO;
+    loop {
+        // Short poll slices keep Cancel responsive even when the connection
+        // is silently dead (reqwest has no read timeout of its own).
+        let chunk = match tokio::time::timeout(CANCEL_POLL, resp.chunk()).await {
+            Ok(r) => r.map_err(|e| LayaError::Other(e.to_string()))?,
+            Err(_) => {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(LayaError::Cancelled);
+                }
+                stalled += CANCEL_POLL;
+                if stalled >= STALL_TIMEOUT {
+                    return Err(LayaError::Other(format!(
+                        "The download stalled (no data for {} s).",
+                        STALL_TIMEOUT.as_secs()
+                    )));
+                }
+                continue;
+            }
+        };
+        stalled = std::time::Duration::ZERO;
+        let Some(chunk) = chunk else { break };
         if cancel.load(Ordering::Relaxed) {
             return Err(LayaError::Cancelled);
         }

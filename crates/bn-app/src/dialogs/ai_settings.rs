@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use crate::ai::client;
 use crate::ai::laya_local::{self, LayaCheckpoint};
 use crate::ai::settings::{self, ProviderKind, RoleConfig};
-use crate::state::{DialogDesc, close_dialog, open_dialog};
+use crate::state::close_dialog;
 use crate::ui::{BTN, BTN_PRIMARY, Modal, SELECT, TextInput};
 
 #[component]
@@ -110,10 +110,9 @@ fn StructuredSection(checkpoint: LayaCheckpoint, on_change: EventHandler<LayaChe
                 button {
                     class: BTN,
                     onclick: move |_| {
-                        // Replaces this dialog (single slot); settings edits
-                        // not yet saved are discarded — checkpoint choice is
-                        // re-selectable, so that's acceptable.
-                        open_dialog(DialogDesc::LayaDownload { checkpoint });
+                        // Overlay on top of this dialog — unsaved settings
+                        // edits survive the download detour.
+                        crate::dialogs::laya_download::open(checkpoint);
                     },
                     if installed { "Re-download…" } else { "Download…" }
                 }

@@ -215,9 +215,9 @@ fn set_cpt_shape_error_rolls_back() {
     let mut s = Session::new();
     let id = ops::edit::add_node(&mut s, NodeKind::Chance, 0.0, 0.0).unwrap();
     let before = s.doc().net.node(id).table.data.clone();
-    // Wrong length → error, and the failed begin_change snapshot is rolled back.
+    // Wrong length → rejected before begin_change (so no undo/redo churn).
     let err = ops::cpt::set_cpt(&mut s, id, vec![0.5; 5]).unwrap_err();
-    assert!(matches!(err, CmdError::Model(_)));
+    assert!(matches!(err, CmdError::BadRequest(_)));
     assert_eq!(
         s.doc().net.node(id).table.data,
         before,
@@ -538,6 +538,47 @@ fn ai_cpt_accept_writes_table_and_dirichlet_experience() {
     // One undo reverts both the table and the experience.
     ops::edit::undo(&mut s);
     assert_eq!(s.doc().net.node(tub).experience, None);
+}
+
+#[test]
+fn ai_cpt_accept_keeps_learned_experience() {
+    let mut s = Session::new();
+    *s.doc_mut() = load_asia();
+    let tub = s.doc().net.find_by_name("Tuberculosis").unwrap();
+    let rows = s.doc().net.row_count(tub);
+    let len = s.doc().net.table_len(tub);
+    s.doc_mut().net.set_experience(tub, Some(vec![25.0; rows])).unwrap();
+
+    ops::cpt::set_cpt_ai(&mut s, tub, vec![1.0; len]).unwrap();
+    assert_eq!(
+        s.doc().net.node(tub).experience,
+        Some(vec![25.0; rows]),
+        "an AI accept must not replace learned counts with the ε prior"
+    );
+}
+
+#[test]
+fn rejected_cpt_shape_preserves_redo_and_modified() {
+    let mut s = Session::new();
+    *s.doc_mut() = load_asia();
+    let tub = s.doc().net.find_by_name("Tuberculosis").unwrap();
+    let len = s.doc().net.table_len(tub);
+    let out = s.doc().net.node(tub).out_card();
+
+    // Build a redo entry, then try writes with a stale shape (the modeless
+    // editor's structure-changed race).
+    ops::cpt::set_cpt(&mut s, tub, vec![1.0; len]).unwrap();
+    ops::edit::undo(&mut s);
+    let modified_before = s.doc().modified;
+    assert!(ops::cpt::set_cpt(&mut s, tub, vec![1.0; len + 1]).is_err());
+    assert!(ops::cpt::set_cpt_ai(&mut s, tub, vec![1.0; len + 1]).is_err());
+    assert_eq!(s.doc().modified, modified_before, "a rejected write must not dirty the doc");
+
+    // The redo stack survived the rejected writes.
+    ops::edit::redo(&mut s);
+    for v in &s.doc().net.node(tub).table.data {
+        assert!((v - 1.0 / out as f64).abs() < 1e-12, "redo re-applies the uniform write");
+    }
 }
 
 #[test]

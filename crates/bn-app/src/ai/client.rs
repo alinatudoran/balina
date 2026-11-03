@@ -17,10 +17,22 @@ pub async fn test_connection(cfg: RoleConfig) -> Result<String, String> {
 /// The `ai` crate stores an API base and appends `/chat/completions` itself,
 /// while the settings field holds the FULL endpoint URL for OpenAI-compatible
 /// and OpenRouter providers — strip the suffix back off. A plain base URL
-/// passes through unchanged.
-fn completions_base(url: &str) -> String {
-    let url = url.trim().trim_end_matches('/');
-    url.strip_suffix("/chat/completions").unwrap_or(url).trim_end_matches('/').to_string()
+/// passes through unchanged. A URL carrying a query string (Azure's
+/// `?api-version=…`) can never be addressed through the crate's
+/// `{base}/chat/completions` rebuild, so it is rejected with a clear message
+/// instead of letting every request — Test connection included — 404.
+fn completions_base(url: &str) -> Result<String, String> {
+    let url = url.trim();
+    if url.contains(['?', '#']) {
+        return Err(
+            "The endpoint URL must not contain a query string or fragment \
+             (Azure-style `?api-version=…` endpoints are not supported); \
+             enter the plain …/chat/completions URL."
+                .into(),
+        );
+    }
+    let url = url.trim_end_matches('/');
+    Ok(url.strip_suffix("/chat/completions").unwrap_or(url).trim_end_matches('/').to_string())
 }
 
 /// Build an executable LLM model handle from a text-role config.
@@ -55,7 +67,7 @@ pub fn build_llm_model(cfg: &RoleConfig) -> Result<ai::Model, String> {
             ai::providers::openai::builder()
                 .provider_id("openai-compatible")
                 .api_key(Some(cfg.api_key.trim()))
-                .base_url(completions_base(&cfg.base_url))
+                .base_url(completions_base(&cfg.base_url)?)
                 .chat_completions()
                 .build()
                 .map_err(err)?
@@ -72,7 +84,7 @@ pub fn build_llm_model(cfg: &RoleConfig) -> Result<ai::Model, String> {
             ai::providers::openai::builder()
                 .provider_id("openrouter")
                 .api_key(Some(cfg.api_key.trim()))
-                .base_url(completions_base(&url))
+                .base_url(completions_base(&url)?)
                 .chat_completions()
                 .build()
                 .map_err(err)?
@@ -119,14 +131,28 @@ mod tests {
     #[test]
     fn full_url_maps_to_crate_base() {
         assert_eq!(
-            completions_base("https://openrouter.ai/api/v1/chat/completions"),
+            completions_base("https://openrouter.ai/api/v1/chat/completions").unwrap(),
             "https://openrouter.ai/api/v1"
         );
         assert_eq!(
-            completions_base(" https://api.perplexity.ai/chat/completions/ "),
+            completions_base(" https://api.perplexity.ai/chat/completions/ ").unwrap(),
             "https://api.perplexity.ai"
         );
         // A plain base URL passes through unchanged.
-        assert_eq!(completions_base("http://localhost:4141/v1/"), "http://localhost:4141/v1");
+        assert_eq!(
+            completions_base("http://localhost:4141/v1/").unwrap(),
+            "http://localhost:4141/v1"
+        );
+    }
+
+    #[test]
+    fn query_string_url_is_rejected_with_a_clear_error() {
+        // Azure-style endpoint: the crate's `{base}/chat/completions` rebuild
+        // can never address it — surface that instead of an opaque 404.
+        let err = completions_base(
+            "https://res.openai.azure.com/openai/deployments/d/chat/completions?api-version=2024-06-01",
+        )
+        .unwrap_err();
+        assert!(err.contains("query string"), "{err}");
     }
 }

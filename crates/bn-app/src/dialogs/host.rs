@@ -21,7 +21,27 @@ pub fn DialogHost() -> Element {
             }
     });
 
-    let Some(dialog) = DIALOG.read().clone() else { return rsx! {} };
+    rsx! {
+        {DIALOG.read().clone().map(render_dialog)}
+        // Overlay slot: stacks on top of whichever dialog opened it, so that
+        // dialog's unsaved state survives the download detour.
+        {laya_download_overlay()}
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn laya_download_overlay() -> Element {
+    rsx! {
+        crate::dialogs::laya_download::LayaDownloadHost {}
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn laya_download_overlay() -> Element {
+    rsx! {}
+}
+
+fn render_dialog(dialog: DialogDesc) -> Element {
     match dialog {
         DialogDesc::NodeProperties { node } => rsx! {
             crate::dialogs::node_props::NodePropertiesDialog { key: "{node:?}", id: node }
@@ -73,10 +93,6 @@ pub fn DialogHost() -> Element {
         #[cfg(not(target_arch = "wasm32"))]
         DialogDesc::AiEvidence => rsx! {
             crate::dialogs::ai_evidence::AiEvidenceDialog {}
-        },
-        #[cfg(not(target_arch = "wasm32"))]
-        DialogDesc::LayaDownload { checkpoint } => rsx! {
-            crate::dialogs::laya_download::LayaDownloadDialog { checkpoint }
         },
         #[cfg(target_arch = "wasm32")]
         DialogDesc::SaveAsWeb => rsx! {

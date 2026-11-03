@@ -7,13 +7,19 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+/// Serde spellings must stay identical to [`ProviderKind::id`] — the ids the
+/// UI shows — so a hand-edited settings file round-trips (the aliases keep
+/// files written by earlier builds, which used kebab-cased variant names,
+/// loading).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum ProviderKind {
+    #[serde(rename = "anthropic")]
     Anthropic,
+    #[serde(rename = "openai", alias = "open-ai")]
     OpenAi,
     /// Any OpenAI-compatible chat endpoint (Perplexity, local inference
     /// servers) addressed by its full chat-completions URL.
+    #[serde(rename = "openai-compatible", alias = "open-ai-compatible")]
     OpenAiCompatible,
     #[serde(rename = "openrouter")]
     OpenRouter,
@@ -158,9 +164,29 @@ fn load_from(path: &Path) -> AiSettings {
     fn lenient<T: serde::de::DeserializeOwned>(v: Option<serde_json::Value>) -> Option<T> {
         v.and_then(|v| serde_json::from_value(v).ok())
     }
+    // Full parse, else field-by-field salvage: one malformed field must not
+    // reset the whole role — the next Save would silently wipe the stored
+    // API key.
+    fn lenient_role(v: Option<serde_json::Value>) -> Option<RoleConfig> {
+        let v = v?;
+        if let Ok(cfg) = serde_json::from_value::<RoleConfig>(v.clone()) {
+            return Some(cfg);
+        }
+        let obj = v.as_object()?;
+        let provider = serde_json::from_value(obj.get("provider")?.clone()).ok()?;
+        let field = |k: &str| {
+            obj.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string()
+        };
+        Some(RoleConfig {
+            provider,
+            base_url: field("base_url"),
+            api_key: field("api_key"),
+            model: field("model"),
+        })
+    }
     let defaults = AiSettings::default();
     AiSettings {
-        text: lenient(section.text).unwrap_or(defaults.text),
+        text: lenient_role(section.text).unwrap_or(defaults.text),
         structured: lenient(section.structured).unwrap_or(defaults.structured),
     }
 }
@@ -273,5 +299,62 @@ mod tests {
         for p in ProviderKind::ALL {
             assert_eq!(ProviderKind::from_id(p.id()), Some(p));
         }
+    }
+
+    #[test]
+    fn provider_serde_spelling_matches_ui_id() {
+        // A hand-edited file using the id the app displays must load; a
+        // mismatch here silently reset the role and wiped the API key.
+        for p in ProviderKind::ALL {
+            assert_eq!(serde_json::to_value(p).unwrap(), serde_json::json!(p.id()));
+            assert_eq!(
+                serde_json::from_value::<ProviderKind>(serde_json::json!(p.id())).unwrap(),
+                p
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_kebab_provider_spellings_still_load() {
+        // Earlier builds serialized variant names via kebab-case.
+        for (old, expect) in [
+            ("open-ai", ProviderKind::OpenAi),
+            ("open-ai-compatible", ProviderKind::OpenAiCompatible),
+        ] {
+            assert_eq!(
+                serde_json::from_value::<ProviderKind>(serde_json::json!(old)).unwrap(),
+                expect
+            );
+        }
+    }
+
+    #[test]
+    fn hand_edited_ui_spelling_keeps_api_key() {
+        let path = tmp_file("ui-spelling");
+        std::fs::write(
+            &path,
+            r#"{"ai": {"text": {"provider": "openai", "api_key": "sk-keep", "model": "gpt-5"}}}"#,
+        )
+        .unwrap();
+        let s = load_from(&path);
+        assert_eq!(s.text.provider, ProviderKind::OpenAi);
+        assert_eq!(s.text.api_key, "sk-keep");
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn malformed_field_does_not_wipe_the_key() {
+        // `model` has the wrong type; the salvage path keeps the rest.
+        let path = tmp_file("salvage");
+        std::fs::write(
+            &path,
+            r#"{"ai": {"text": {"provider": "anthropic", "api_key": "sk-keep", "model": 5}}}"#,
+        )
+        .unwrap();
+        let s = load_from(&path);
+        assert_eq!(s.text.provider, ProviderKind::Anthropic);
+        assert_eq!(s.text.api_key, "sk-keep");
+        assert_eq!(s.text.model, "");
+        std::fs::remove_file(&path).unwrap();
     }
 }

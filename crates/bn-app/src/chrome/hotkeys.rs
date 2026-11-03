@@ -21,6 +21,13 @@ pub fn handle_keydown(ev: KeyboardEvent) {
             *CONTEXT_MENU.write() = None;
             return;
         }
+        // The download overlay stacks above the dialog slot; `close()` also
+        // sets its cancel flag — never clear it by writing DIALOG directly.
+        #[cfg(not(target_arch = "wasm32"))]
+        if crate::dialogs::laya_download::is_open() {
+            crate::dialogs::laya_download::close();
+            return;
+        }
         if DIALOG.read().is_some() {
             *DIALOG.write() = None;
             return;
@@ -90,16 +97,21 @@ pub fn handle_keydown(ev: KeyboardEvent) {
     if *TYPING.read() {
         // macOS webviews only run Cmd+A / Cmd+Z editing commands through
         // native menu items, and those have no accelerators (the canvas owns
-        // them), so drive the focused input by hand.
+        // them), so drive the focused input by hand. Only the EXACT Cmd
+        // combination is taken — Cmd+Option/Ctrl/Shift combos (including
+        // Cmd+Shift+Z redo, which `execCommand('redo')` handles unreliably
+        // in WKWebView) pass through to the webview.
         #[cfg(target_os = "macos")]
         {
             let mods = data.modifiers();
-            let shift = mods.contains(Modifiers::SHIFT);
-            if mods.contains(Modifiers::META) && let Key::Character(ref k) = key {
-                let js = match (k.to_ascii_lowercase().as_str(), shift) {
-                    ("a", _) => Some("document.activeElement?.select?.()"),
-                    ("z", false) => Some("document.execCommand('undo')"),
-                    ("z", true) => Some("document.execCommand('redo')"),
+            let plain_cmd = mods.contains(Modifiers::META)
+                && !mods.contains(Modifiers::CONTROL)
+                && !mods.contains(Modifiers::ALT)
+                && !mods.contains(Modifiers::SHIFT);
+            if plain_cmd && let Key::Character(ref k) = key {
+                let js = match k.to_ascii_lowercase().as_str() {
+                    "a" => Some("document.activeElement?.select?.()"),
+                    "z" => Some("document.execCommand('undo')"),
                     _ => None,
                 };
                 if let Some(js) = js {
