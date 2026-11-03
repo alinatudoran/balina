@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use crate::logic::cpt_math::{
     clamp_cell, format_cell, normalize_rows, row_sum, row_sum_ok, uniform,
 };
-use crate::state::{close_dialog, exec, TYPING};
+use crate::state::{close_dialog, exec_res, SESSION, TYPING};
 use crate::ui::{Modeless, BTN_SM, BTN_PRIMARY};
 
 /// "Suggest with AI" row — desktop only; the web build renders nothing.
@@ -22,7 +22,7 @@ fn ai_suggest_row(
     parent_names: Vec<String>,
     row_labels: Vec<String>,
     draft: Signal<Vec<f64>>,
-    suggested: Signal<bool>,
+    ai_cells: Signal<Vec<bool>>,
 ) -> Element {
     rsx! {
         AiSuggestRow {
@@ -33,7 +33,7 @@ fn ai_suggest_row(
             parent_names,
             row_labels,
             draft,
-            suggested,
+            ai_cells,
         }
     }
 }
@@ -48,7 +48,7 @@ fn ai_suggest_row(
     _parent_names: Vec<String>,
     _row_labels: Vec<String>,
     _draft: Signal<Vec<f64>>,
-    _suggested: Signal<bool>,
+    _ai_cells: Signal<Vec<bool>>,
 ) -> Element {
     rsx! {}
 }
@@ -63,7 +63,7 @@ fn AiSuggestRow(
     parent_names: Vec<String>,
     row_labels: Vec<String>,
     draft: Signal<Vec<f64>>,
-    suggested: Signal<bool>,
+    ai_cells: Signal<Vec<bool>>,
 ) -> Element {
     let mut guidance = use_signal(String::new);
     let mut running = use_signal(|| false);
@@ -82,7 +82,7 @@ fn AiSuggestRow(
         };
         let cfg = crate::ai::settings::load().structured;
         let mut draft = draft;
-        let mut suggested = suggested;
+        let mut ai_cells = ai_cells;
         running.set(true);
         failed.set(false);
         status.set("Asking the local structured model…".to_string());
@@ -91,16 +91,19 @@ fn AiSuggestRow(
             running.set(false);
             match result {
                 Ok(data) => {
+                    ai_cells.set(vec![true; data.len()]);
                     draft.set(data);
-                    suggested.set(true);
                     status.set(String::new());
                 }
                 Err(crate::ai::laya_local::LayaError::NotInstalled(checkpoint)) => {
-                    // Hand over to the download dialog (replacing this
-                    // editor in the single dialog slot).
-                    crate::state::open_dialog(crate::state::DialogDesc::LayaDownload {
-                        checkpoint,
-                    });
+                    // The download overlay stacks above this editor; the
+                    // draft cells stay intact underneath.
+                    crate::dialogs::laya_download::open(checkpoint);
+                    status.set(
+                        "The Laya model is not installed — download it, then press \
+                         Suggest with AI again."
+                            .to_string(),
+                    );
                 }
                 Err(e) => {
                     failed.set(true);
@@ -135,10 +138,11 @@ fn AiSuggestRow(
                 "{status}"
             }
         }
-        if *suggested.read() {
+        if ai_cells.read().iter().any(|&b| b) {
             div { class: "rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800",
-                "AI-suggested values — review and edit freely. Apply/OK writes them with a weak \
-                 prior (experience \u{03b5} = 1 per row) so learned data overrides them."
+                "AI-suggested values — review and edit freely (edited cells count as yours). \
+                 Apply/OK writes a weak prior (experience \u{03b5} = 1 per row) on nodes without \
+                 learned experience, so learned data overrides the suggestion."
             }
         }
     }
@@ -162,9 +166,14 @@ pub fn CptEditorDialog(id: NodeId) -> Element {
     });
     // The one focused cell's raw text (flat index, buffer).
     let mut editing: Signal<Option<(usize, String)>> = use_signal(|| None);
-    // Set when the draft grid was filled by the structured model; accepting
-    // then writes the table with a weak Dirichlet prior (ops::cpt::set_cpt_ai).
-    let ai_suggested = use_signal(|| false);
+    // Per-cell provenance: true while a cell still holds the structured
+    // model's value. Committing a cell by hand clears its flag; as long as
+    // ANY remains, accepting writes through ops::cpt::set_cpt_ai (weak
+    // Dirichlet prior). A fully hand-edited grid goes through set_cpt.
+    let mut ai_cells: Signal<Vec<bool>> = use_signal(Vec::new);
+    // Error from a failed Apply/OK, shown inline (the message log is easy to
+    // miss and OK must not close over a failed write).
+    let mut apply_error = use_signal(String::new);
 
     let out = view.out_card;
     let is_utility = view.is_utility;
@@ -193,22 +202,58 @@ pub fn CptEditorDialog(id: NodeId) -> Element {
         if let Ok(v) = text.trim().parse::<f64>()
             && v.is_finite() {
                 draft.write()[idx] = clamp_cell(v, is_utility);
+                // A hand-committed cell is the user's value now.
+                if let Some(flag) = ai_cells.write().get_mut(idx) {
+                    *flag = false;
+                }
             }
         editing.set(None);
     };
 
-    let do_apply = move || {
+    let mut do_apply = move || -> bool {
         let data = draft.read().clone();
-        if *ai_suggested.read() {
-            exec(|s| bn_session::ops::cpt::set_cpt_ai(s, id, data));
+        // The editor is modeless: the node's structure can change while it
+        // is open. A stale draft must fail loudly, not land half-applied.
+        let expected = {
+            let s = SESSION.read();
+            if !s.doc().net.contains(id) {
+                return false; // the host's close-on-vanish is about to fire
+            }
+            s.doc().net.table_len(id)
+        };
+        if data.len() != expected {
+            apply_error.set(
+                "The node's parents or states changed while this editor was open — \
+                 the draft no longer fits. Close and reopen the editor."
+                    .to_string(),
+            );
+            return false;
+        }
+        let result = if ai_cells.read().iter().any(|&b| b) {
+            exec_res(|s| bn_session::ops::cpt::set_cpt_ai(s, id, data))
         } else {
-            exec(|s| bn_session::ops::cpt::set_cpt(s, id, data));
+            exec_res(|s| bn_session::ops::cpt::set_cpt(s, id, data))
+        };
+        match result {
+            Ok(()) => {
+                apply_error.set(String::new());
+                true
+            }
+            Err(e) => {
+                apply_error.set(e.to_string());
+                false
+            }
         }
     };
-    let apply = move |_| do_apply();
-    let apply_close = move |_| {
+    let apply = move |_| {
         do_apply();
-        close_dialog();
+    };
+    let apply_close = move |_| {
+        // OK keeps the editor open when the write failed — closing would
+        // leave the user believing the table was written.
+        if do_apply() {
+            close_dialog();
+        }
     };
 
     rsx! {
@@ -231,6 +276,8 @@ pub fn CptEditorDialog(id: NodeId) -> Element {
                         onclick: move |_| {
                             let len = draft.read().len();
                             draft.set(uniform(len, out));
+                            // Nothing AI-suggested survives a uniform reset.
+                            ai_cells.set(Vec::new());
                         },
                         "Uniform"
                     }
@@ -250,8 +297,13 @@ pub fn CptEditorDialog(id: NodeId) -> Element {
                     view.parent_headers.clone(),
                     row_labels.clone(),
                     draft,
-                    ai_suggested,
+                    ai_cells,
                 )}
+            }
+            if !apply_error.read().is_empty() {
+                div { class: "max-h-24 overflow-auto text-xs whitespace-pre-wrap text-red-600",
+                    "{apply_error}"
+                }
             }
             div { class: "max-h-[60vh] overflow-auto rounded border",
                 table { class: "w-full text-xs",

@@ -5,17 +5,24 @@
 //! configured, an optional second pass marks findings the text states
 //! outright; those snap to 1/0 and are applied as hard findings.
 
+use std::collections::HashMap;
+
 use bn_core::inference::Finding;
+use bn_core::model::NodeId;
+use bn_session::TabId;
 use dioxus::prelude::*;
 
 use crate::ai::{client, definite, evidence, settings};
-use crate::state::{close_dialog, exec, log_message, SESSION};
+use crate::state::{close_dialog, exec_res, log_message, SESSION};
 use crate::ui::{Modal, TextArea, TextInput, BTN, BTN_PRIMARY};
 
 /// One reviewed suggestion; values are kept as strings so the user can edit
 /// them like the likelihood dialog's cells.
 #[derive(Clone, PartialEq)]
 struct Review {
+    /// Captured at analyze time — Apply addresses the node by id, never by a
+    /// name lookup against whatever document happens to be active.
+    id: NodeId,
     name: String,
     title: String,
     states: Vec<String>,
@@ -31,8 +38,12 @@ pub fn AiEvidenceDialog() -> Element {
     let mut text = use_signal(String::new);
     let mut running = use_signal(|| false);
     let mut error = use_signal(String::new);
-    // None = paste step; Some = review step (with the abstained node names).
-    let mut review: Signal<Option<(Vec<Review>, Vec<String>)>> = use_signal(|| None);
+    // None = paste step; Some = review step: the tab the analysis ran
+    // against (Apply refuses on any other tab — node ids are per-document
+    // and hotkeys can switch tabs under this modal), the reviews, and the
+    // abstained node names.
+    type ReviewStep = Option<(TabId, Vec<Review>, Vec<String>)>;
+    let mut review: Signal<ReviewStep> = use_signal(|| None);
     // Text model usable for the definite-findings pass (provider label if so).
     let text_provider = use_hook(|| {
         let t = settings::load().text;
@@ -43,14 +54,17 @@ pub fn AiEvidenceDialog() -> Element {
     let mut notice = use_signal(String::new);
 
     let on_analyze = move |_| {
-        let nodes: Vec<evidence::NodeQuery> = {
+        let (tab, ids, nodes): (TabId, HashMap<String, NodeId>, Vec<evidence::NodeQuery>) = {
             let s = SESSION.read();
             let net = &s.doc().net;
-            net.node_ids()
+            let mut ids = HashMap::new();
+            let nodes = net
+                .node_ids()
                 .into_iter()
                 .filter(|&id| net.node(id).kind == bn_core::model::NodeKind::Chance)
                 .map(|id| {
                     let n = net.node(id);
+                    ids.insert(n.name.clone(), id);
                     evidence::NodeQuery {
                         name: n.name.clone(),
                         title: n.title.clone(),
@@ -58,7 +72,8 @@ pub fn AiEvidenceDialog() -> Element {
                         states: n.states.iter().map(|st| st.name.clone()).collect(),
                     }
                 })
-                .collect()
+                .collect();
+            (s.active_id(), ids, nodes)
         };
         let doc_text = text.read().trim().to_string();
         let all = settings::load();
@@ -95,11 +110,14 @@ pub fn AiEvidenceDialog() -> Element {
             running.set(false);
             match result {
                 Err(crate::ai::laya_local::LayaError::NotInstalled(checkpoint)) => {
-                    // Hand over to the download dialog (single dialog slot);
-                    // the user reopens this dialog after installing.
-                    crate::state::open_dialog(crate::state::DialogDesc::LayaDownload {
-                        checkpoint,
-                    });
+                    // The download overlay stacks above this dialog; the
+                    // pasted text stays intact underneath.
+                    crate::dialogs::laya_download::open(checkpoint);
+                    error.set(
+                        "The Laya model is not installed — download it, then press \
+                         Analyze again."
+                            .to_string(),
+                    );
                 }
                 Ok(found) => {
                     let found_names: Vec<&String> = found.iter().map(|(n, _)| n).collect();
@@ -123,6 +141,7 @@ pub fn AiEvidenceDialog() -> Element {
                                 None => probs.iter().map(|p| format!("{p:.3}")).collect(),
                             };
                             Review {
+                                id: *ids.get(name).expect("validated"),
                                 name: name.clone(),
                                 title: q.title.clone(),
                                 states: q.states.clone(),
@@ -136,7 +155,7 @@ pub fn AiEvidenceDialog() -> Element {
                         error.set("The model found no information about any node in this text."
                             .to_string());
                     } else {
-                        review.set(Some((reviews, abstained)));
+                        review.set(Some((tab, reviews, abstained)));
                     }
                 }
                 Err(e) => error.set(e.to_string()),
@@ -145,42 +164,68 @@ pub fn AiEvidenceDialog() -> Element {
     };
 
     let apply = move |_| {
-        let Some((reviews, _)) = review.read().clone() else { return };
-        let findings: Vec<(bn_core::model::NodeId, Finding)> = {
+        let Some((tab, reviews, _)) = review.read().clone() else { return };
+        // Every failure is reported in the dialog, which stays open — an
+        // Apply that silently does nothing (or applies to the wrong network)
+        // is worse than an error.
+        let (findings, missing) = {
             let s = SESSION.read();
-            reviews
-                .iter()
-                .filter(|r| r.include)
-                .filter_map(|r| {
-                    let id = s.doc().net.find_by_name(&r.name)?;
-                    let vals: Vec<f64> =
-                        r.values.iter().filter_map(|v| v.trim().parse::<f64>().ok()).collect();
-                    if vals.len() != r.states.len() {
-                        return None;
-                    }
-                    // A definite row is one-hot by construction (edits clear the flag).
-                    let finding = match vals.iter().position(|&v| v > 0.0) {
-                        Some(i) if r.definite => Finding::Hard(i),
-                        _ => Finding::Likelihood(vals),
-                    };
-                    Some((id, finding))
-                })
-                .collect()
+            if s.active_id() != tab {
+                error.set(
+                    "A different network tab is active now. Switch back to the analyzed \
+                     network (or re-run the analysis here) before applying."
+                        .to_string(),
+                );
+                return;
+            }
+            let mut findings: Vec<(NodeId, Finding)> = Vec::new();
+            let mut missing: Vec<String> = Vec::new();
+            for r in reviews.iter().filter(|r| r.include) {
+                if !s.doc().net.contains(r.id) {
+                    missing.push(r.name.clone());
+                    continue;
+                }
+                let vals: Vec<f64> =
+                    r.values.iter().filter_map(|v| v.trim().parse::<f64>().ok()).collect();
+                if vals.len() != r.states.len() {
+                    // Unreachable while `can_apply` gates the button.
+                    missing.push(r.name.clone());
+                    continue;
+                }
+                // A definite row is one-hot by construction (edits clear the flag).
+                let finding = match vals.iter().position(|&v| v > 0.0) {
+                    Some(i) if r.definite => Finding::Hard(i),
+                    _ => Finding::Likelihood(vals),
+                };
+                findings.push((r.id, finding));
+            }
+            (findings, missing)
         };
+        if !missing.is_empty() {
+            error.set(format!(
+                "These nodes no longer exist in the network: {}. Untick them or re-run \
+                 the analysis.",
+                missing.join(", ")
+            ));
+            return;
+        }
         let hard = findings.iter().filter(|(_, f)| matches!(f, Finding::Hard(_))).count();
         let soft = findings.len() - hard;
-        if exec(|s| bn_session::ops::evidence::set_findings(s, findings)).is_some() {
-            log_message(format!(
-                "Applied AI-extracted findings: {hard} hard, {soft} likelihood."
-            ));
-            close_dialog();
+        match exec_res(|s| bn_session::ops::evidence::set_findings(s, findings)) {
+            Ok(()) => {
+                log_message(format!(
+                    "Applied AI-extracted findings: {hard} hard, {soft} likelihood."
+                ));
+                close_dialog();
+            }
+            Err(e) => error.set(e.to_string()),
         }
     };
 
     let reviewing = review.read().is_some();
     let can_analyze = !*running.read() && !text.read().trim().is_empty();
     // Included rows must parse to valid likelihoods (≥ 0, one > 0).
-    let can_apply = review.read().as_ref().is_some_and(|(rs, _)| {
+    let can_apply = review.read().as_ref().is_some_and(|(_, rs, _)| {
         let included: Vec<&Review> = rs.iter().filter(|r| r.include).collect();
         !included.is_empty()
             && included.iter().all(|r| {
@@ -251,7 +296,7 @@ pub fn AiEvidenceDialog() -> Element {
                     if *running.read() {
                         div { class: "text-xs text-muted-foreground", "{progress}" }
                     }
-                } else if let Some((reviews, abstained)) = review.read().clone() {
+                } else if let Some((_, reviews, abstained)) = review.read().clone() {
                     p { class: "text-xs text-muted-foreground",
                         "AI-suggested likelihoods — review, edit, untick what you don't trust. \
                          Apply sets them as soft evidence, and rows marked definite as hard \
@@ -268,7 +313,7 @@ pub fn AiEvidenceDialog() -> Element {
                                         r#type: "checkbox",
                                         checked: r.include,
                                         onchange: move |ev| {
-                                            if let Some((rs, _)) = review.write().as_mut() {
+                                            if let Some((_, rs, _)) = review.write().as_mut() {
                                                 rs[ri].include = ev.checked();
                                             }
                                         },
@@ -297,7 +342,7 @@ pub fn AiEvidenceDialog() -> Element {
                                                 class: "h-6 w-16 text-right font-mono text-xs",
                                                 value: r.values[si].clone(),
                                                 oninput: move |v| {
-                                                    if let Some((rs, _)) = review.write().as_mut() {
+                                                    if let Some((_, rs, _)) = review.write().as_mut() {
                                                         rs[ri].values[si] = v;
                                                         rs[ri].definite = false;
                                                     }

@@ -28,6 +28,8 @@ fn main() {
     if let Some(arg) = std::env::args().nth(1) {
         let _ = INITIAL_FILE.set(std::path::PathBuf::from(arg));
     }
+    // A kill or crash mid-download can leave staged model files behind.
+    ai::laya_local::sweep_partial_downloads();
     let window = WindowBuilder::new()
         .with_title("Balina")
         .with_inner_size(dioxus::desktop::LogicalSize::new(1200.0, 800.0));
