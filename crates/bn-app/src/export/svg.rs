@@ -187,6 +187,7 @@ struct NodeRender {
     beliefs: Option<Vec<f64>>,
     decision_eu: Option<Vec<Option<f64>>>,
     utility_ev: Option<f64>,
+    precision: u8,
 }
 
 fn node_render_data(doc: &Document, bridge: &EngineBridge, id: NodeId) -> NodeRender {
@@ -212,6 +213,7 @@ fn node_render_data(doc: &Document, bridge: &EngineBridge, id: NodeId) -> NodeRe
         beliefs: bridge.beliefs.get(id).cloned(),
         decision_eu: bridge.decision_eu.get(id).cloned(),
         utility_ev: bridge.utility_ev.get(id).copied().filter(|v| v.is_finite()),
+        precision: doc.precision,
     }
 }
 
@@ -255,9 +257,10 @@ fn write_node(s: &mut String, doc: &Document, bridge: &EngineBridge, id: NodeId,
     } else {
         // ExpectedValue display (and utility nodes always): title on top,
         // EV/EU value at the bottom — same computation as the canvas.
+        let prec = d.precision as usize;
         let ev_text = if d.kind == NodeKind::Utility {
             match d.utility_ev {
-                Some(v) => format!("EU = {v:.2}"),
+                Some(v) => format!("EU = {v:.prec$}"),
                 None => "EU = --".into(),
             }
         } else {
@@ -268,7 +271,7 @@ fn write_node(s: &mut String, doc: &Document, bridge: &EngineBridge, id: NodeId,
                 .map(|(n, v)| bn_core::model::State { name: n.clone(), value: *v })
                 .collect();
             match expected_value(&states, d.beliefs.as_deref()) {
-                Some(v) => format!("E = {v:.3}"),
+                Some(v) => format!("E = {v:.prec$}"),
                 None => "E = --".into(),
             }
         };
@@ -315,6 +318,7 @@ fn write_belief_row(s: &mut String, d: &NodeRender, i: usize, r: Rect) {
         d.beliefs.as_deref(),
         d.decision_eu.as_deref(),
         d.finding_state == Some(i),
+        d.precision,
     );
     let top = r.y + 22.0 + i as f64 * 16.0;
     let mid = top + 8.0;
@@ -419,8 +423,19 @@ mod tests {
         s.doc_mut().add_node_at(NodeKind::Chance, Point::new(0.0, 0.0)).unwrap();
         bn_session::ops::edit::recompute(&mut s);
         let svg = network_svg(s.doc(), s.bridge()).unwrap();
-        assert!(svg.contains(" 50.0"), "default 2-state uniform belief");
+        assert!(svg.contains(" 50.00"), "default 2-state uniform belief at 2 decimals");
         assert!(svg.contains(BAR_ORANGE));
+    }
+
+    #[test]
+    fn precision_setting_changes_belief_decimals() {
+        let mut s = Session::default();
+        s.doc_mut().add_node_at(NodeKind::Chance, Point::new(0.0, 0.0)).unwrap();
+        bn_session::ops::edit::recompute(&mut s);
+        bn_session::ops::edit::set_precision(&mut s, 0);
+        let svg = network_svg(s.doc(), s.bridge()).unwrap();
+        assert!(svg.contains(" 50<"), "0 decimals drops the point");
+        assert!(!svg.contains(" 50.00<"));
     }
 
     #[test]

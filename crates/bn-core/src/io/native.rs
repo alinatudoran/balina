@@ -37,6 +37,8 @@ struct TabDto {
     visual: HashMap<String, NodeVisual>,
     #[serde(default)]
     notes: Vec<NoteInfo>,
+    #[serde(default = "crate::io::default_precision")]
+    precision: u8,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -105,6 +107,7 @@ fn tab_to_dto(doc: &Document, label: &str) -> TabDto {
         nodes,
         visual: doc.visual.nodes.clone(),
         notes: doc.visual.notes.clone(),
+        precision: doc.visual.precision,
     }
 }
 
@@ -132,7 +135,8 @@ pub fn project_from_json(text: &str) -> Result<Project, IoError> {
     let dto: ProjectDto = serde_json::from_str(text)?;
     let mut sheets = Vec::with_capacity(dto.tabs.len());
     for tab in dto.tabs {
-        let doc = tab_from_dto(tab.name, tab.comment, tab.nodes, tab.visual, tab.notes)?;
+        let doc =
+            tab_from_dto(tab.name, tab.comment, tab.nodes, tab.visual, tab.notes, tab.precision)?;
         sheets.push(ProjectSheet { label: tab.label, doc });
     }
     Ok(Project { sheets, active: dto.active_tab })
@@ -144,6 +148,7 @@ fn tab_from_dto(
     nodes: Vec<NodeDto>,
     visual: HashMap<String, NodeVisual>,
     notes: Vec<NoteInfo>,
+    precision: u8,
 ) -> Result<Document, IoError> {
     let mut net = Network::new(name);
     net.comment = comment;
@@ -171,7 +176,7 @@ fn tab_from_dto(
             net.node_mut(id).continuous = Some(ci);
         }
     }
-    Ok(Document { network: net, visual: VisualInfo { nodes: visual, notes } })
+    Ok(Document { network: net, visual: VisualInfo { nodes: visual, notes, precision } })
 }
 
 // Keep the old public names for backward compat within the crate.

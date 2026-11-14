@@ -50,6 +50,10 @@ pub const NOTE_DEFAULT_COLOR: [u8; 3] = [255, 244, 165]; // sticky yellow
 pub const NOTE_FONT_DEFAULT: f32 = 13.0;
 pub const NOTE_FONT_RANGE: (f32, f32) = (8.0, 32.0);
 
+/// Decimal places shown on node monitors.
+pub const DEFAULT_PRECISION: u8 = 2;
+pub const MAX_PRECISION: u8 = 8;
+
 /// A sticky note on the canvas. Pure annotation: lives outside the network,
 /// so it can never affect inference or learning.
 #[derive(Clone, Debug, PartialEq)]
@@ -108,6 +112,8 @@ pub struct Document {
     pub notes: SlotMap<NoteId, Note>,
     pub evidence: Evidence,
     pub auto_update: bool,
+    /// Decimal places shown on node monitors (0..=8). Persisted in the file.
+    pub precision: u8,
     pub path: Option<PathBuf>,
     pub modified: bool,
     /// Model generation counter: bumped by every change that could affect
@@ -134,6 +140,7 @@ impl Document {
             notes: SlotMap::with_key(),
             evidence: Evidence::new(),
             auto_update: true,
+            precision: DEFAULT_PRECISION,
             path: None,
             modified: false,
             change_seq: 0,
@@ -356,6 +363,7 @@ impl Document {
             notes: self.notes.clone(),
             evidence: self.evidence.clone(),
             auto_update: self.auto_update,
+            precision: self.precision,
             path: None,
             modified: false,
             change_seq: 0,
@@ -388,6 +396,7 @@ impl Document {
                 collapsed: n.collapsed,
             });
         }
+        visual.precision = self.precision;
         io::Document { network: self.net.clone(), visual }
     }
 
@@ -395,6 +404,7 @@ impl Document {
         let mut doc = Document::new();
         doc.net = iodoc.network;
         doc.path = path;
+        doc.precision = iodoc.visual.precision.min(MAX_PRECISION);
         // Layout: use stored positions; auto-layout the rest by topo depth.
         let mut depth: SecondaryMap<NodeId, usize> = SecondaryMap::new();
         let mut count_at: Vec<usize> = vec![];

@@ -3,7 +3,7 @@
 use bn_core::io::DisplayMode;
 use bn_core::model::{NodeId, NodeKind, State};
 
-use crate::doc::{Dirt, NoteId, Point, NOTE_FONT_RANGE, NOTE_MIN_SIZE};
+use crate::doc::{Dirt, NoteId, Point, MAX_PRECISION, NOTE_FONT_RANGE, NOTE_MIN_SIZE};
 use crate::error::CmdError;
 use crate::session::Session;
 use crate::views::{check_node, check_note, NodePropsPatch};
@@ -276,5 +276,18 @@ pub fn recompute(s: &mut Session) {
 
 pub fn set_auto_update(s: &mut Session, on: bool) {
     s.doc_mut().auto_update = on;
+    s.finish(Dirt::None);
+}
+
+/// Set monitor decimal precision, clamped to 0..=[`MAX_PRECISION`]. Like
+/// auto-update it is a doc-level flag outside the undo stack, but it is
+/// persisted in the file, so it marks the document modified.
+pub fn set_precision(s: &mut Session, p: u8) {
+    let p = p.min(MAX_PRECISION);
+    if s.doc().precision == p {
+        return;
+    }
+    s.doc_mut().precision = p;
+    s.doc_mut().modified = true;
     s.finish(Dirt::None);
 }

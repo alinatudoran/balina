@@ -4,7 +4,7 @@
 use bn_core::model::NodeKind;
 use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
-use icons::{Diamond, Dices, SquareSplitVertical, StickyNote};
+use icons::{DecimalsArrowLeft, DecimalsArrowRight, Diamond, Dices, SquareSplitVertical, StickyNote};
 
 use crate::canvas::canvas::default_node_footprint;
 use crate::canvas::controller::{self, Gesture, PaletteItem, FIT_REQUEST, GESTURE, VIEWPORT};
@@ -61,11 +61,11 @@ pub fn add_at_center(item: PaletteItem) {
 #[component]
 pub fn Toolbar() -> Element {
     let auto_update = SESSION.read().doc().auto_update;
+    let precision = SESSION.read().doc().precision;
     let zoom_pct = (VIEWPORT.read().zoom * 100.0).round() as i32;
 
     rsx! {
         div { class: "flex shrink-0 items-center gap-2 border-b px-2 py-1",
-            span { class: "text-xs text-muted-foreground", "Add:" }
             for (item, label) in PALETTE {
                 button {
                     class: "{BTN} cursor-grab",
@@ -85,6 +85,33 @@ pub fn Toolbar() -> Element {
                     {palette_icon(item)}
                     "{label}"
                 }
+            }
+            div { class: "h-5 w-px bg-border" }
+            button {
+                class: "{BTN} disabled:opacity-40",
+                title: "Decrease decimal precision",
+                disabled: precision == 0,
+                onclick: move |_| {
+                    exec(|s| {
+                        let p = s.doc().precision.saturating_sub(1);
+                        bn_session::ops::edit::set_precision(s, p);
+                        Ok(())
+                    });
+                },
+                DecimalsArrowLeft { class: Some("size-3.5".to_string()) }
+            }
+            button {
+                class: "{BTN} disabled:opacity-40",
+                title: "Increase decimal precision",
+                disabled: precision >= bn_session::MAX_PRECISION,
+                onclick: move |_| {
+                    exec(|s| {
+                        let p = s.doc().precision.saturating_add(1);
+                        bn_session::ops::edit::set_precision(s, p);
+                        Ok(())
+                    });
+                },
+                DecimalsArrowRight { class: Some("size-3.5".to_string()) }
             }
             div { class: "h-5 w-px bg-border" }
             button {

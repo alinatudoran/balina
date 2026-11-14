@@ -3,9 +3,12 @@
 
 use bn_core::model::State;
 
-/// `{:5.1}` of a percentage: one decimal, padded to width 5.
-pub fn pct(p: f64) -> String {
-    format!("{:5.1}", p * 100.0)
+/// Percentage with `decimals` places, width-padded so columns align
+/// (width fits "100" plus the decimal point and digits).
+pub fn pct(p: f64, decimals: u8) -> String {
+    let d = decimals as usize;
+    let width = if d == 0 { 3 } else { d + 4 };
+    format!("{:width$.d$}", p * 100.0)
 }
 
 /// `{:.4e}` (P(findings) display).
@@ -41,11 +44,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pct_pads_to_width_5() {
-        assert_eq!(pct(0.051), "  5.1");
-        assert_eq!(pct(1.0), "100.0");
-        assert_eq!(pct(0.0), "  0.0");
-        assert_eq!(pct(0.99999), "100.0");
+    fn pct_pads_to_align_columns() {
+        // 1 decimal → width 5 (the historical format).
+        assert_eq!(pct(0.051, 1), "  5.1");
+        assert_eq!(pct(1.0, 1), "100.0");
+        assert_eq!(pct(0.0, 1), "  0.0");
+        assert_eq!(pct(0.99999, 1), "100.0");
+        // 2 decimals (default precision) → width 6.
+        assert_eq!(pct(0.051, 2), "  5.10");
+        assert_eq!(pct(1.0, 2), "100.00");
+        // 0 decimals → width 3, no decimal point.
+        assert_eq!(pct(0.051, 0), "  5");
+        assert_eq!(pct(1.0, 0), "100");
+        // 8 decimals (the maximum) → width 12.
+        assert_eq!(pct(0.5, 8), " 50.00000000");
     }
 
     #[test]

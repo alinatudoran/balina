@@ -433,6 +433,31 @@ fn native_json_without_notes_field_still_loads() {
 }
 
 #[test]
+fn native_json_without_precision_field_defaults_to_2() {
+    // Files written before the precision setting existed have no `precision` key.
+    let doc = Document { network: asia(), visual: Default::default() };
+    let (text, _) = io::save_str(&doc, Format::NativeJson).unwrap();
+    let stripped = {
+        let mut v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        for tab in v["tabs"].as_array_mut().unwrap() {
+            tab.as_object_mut().unwrap().remove("precision");
+        }
+        v.to_string()
+    };
+    let back = io::load_str(&stripped, Format::NativeJson).unwrap();
+    assert_eq!(back.visual.precision, 2);
+}
+
+#[test]
+fn native_json_precision_roundtrips() {
+    let mut doc = Document { network: asia(), visual: Default::default() };
+    doc.visual.precision = 5;
+    let (text, _) = io::save_str(&doc, Format::NativeJson).unwrap();
+    let back = io::load_str(&text, Format::NativeJson).unwrap();
+    assert_eq!(back.visual.precision, 5);
+}
+
+#[test]
 fn xml_formats_warn_about_omitted_notes() {
     let mut doc = Document { network: asia(), visual: Default::default() };
     doc.visual.notes.push(io::NoteInfo {

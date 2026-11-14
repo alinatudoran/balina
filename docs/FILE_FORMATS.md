@@ -23,17 +23,24 @@ Versioned JSON:
 
 ```json
 {
-  "format": "balina-net", "version": 1,
-  "name": "Chest Clinic (Asia)", "comment": "",
-  "nodes": [
-    { "name": "VisitAsia", "title": "", "kind": "Chance",
-      "states": [{"name": "yes", "value": null}, {"name": "no", "value": null}],
-      "parents": [],            // parent NAMES, in table-axis order
-      "table": [0.01, 0.99],    // flat, layout as above
-      "experience": null, "comment": "" },
-    ...
-  ],
-  "visual": { "VisitAsia": {"x": 40.0, "y": 40.0, "display": "BeliefBars", "color": null}, ... }
+  "format": "balina-project", "version": 1,
+  "active_tab": 0,
+  "tabs": [
+    {
+      "label": "Asia", "name": "Chest Clinic (Asia)", "comment": "",
+      "nodes": [
+        { "name": "VisitAsia", "title": "", "kind": "Chance",
+          "states": [{"name": "yes", "value": null}, {"name": "no", "value": null}],
+          "parents": [],            // parent NAMES, in table-axis order
+          "table": [0.01, 0.99],    // flat, layout as above
+          "experience": null, "comment": "" },
+        ...
+      ],
+      "visual": { "VisitAsia": {"x": 40.0, "y": 40.0, "display": "BeliefBars", "color": null}, ... },
+      "notes": [],
+      "precision": 2              // monitor decimal places (0..=8), per tab
+    }
+  ]
 }
 ```
 

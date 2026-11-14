@@ -55,13 +55,25 @@ fn default_note_color() -> [u8; 3] {
 fn default_note_font() -> f32 {
     13.0
 }
+pub(crate) fn default_precision() -> u8 {
+    2
+}
 
 /// Layout metadata, keyed by node name (stable across sessions).
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VisualInfo {
     pub nodes: HashMap<String, NodeVisual>,
     #[serde(default)]
     pub notes: Vec<NoteInfo>,
+    /// Decimal places shown on node monitors (0..=8).
+    #[serde(default = "default_precision")]
+    pub precision: u8,
+}
+
+impl Default for VisualInfo {
+    fn default() -> Self {
+        VisualInfo { nodes: HashMap::new(), notes: Vec::new(), precision: default_precision() }
+    }
 }
 
 #[derive(Clone, Debug, Default)]

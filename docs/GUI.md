@@ -260,7 +260,8 @@ item handle lives in a thread-local for `sync_auto_update_item`.
   (and the CPT editor's cell inputs). Every free-text input MUST use those
   components — a raw `input {}` silently breaks the guard.
 
-Chrome: `Toolbar` (palette, ⚡ Compile, auto-update, fit view, zoom %),
+Chrome: `Toolbar` (palette, monitor decimal precision −/+ [doc-level,
+0..=8, persisted], ⚡ Compile, auto-update, fit view, zoom %),
 `StatusBar` (name + `*`, Compiled/Stale/⚠ conflict, P(findings) via
 `exp(log_p_e)`, node/link counts, update ms, log toggle), `MessageLog`
 (monospace, stick-to-bottom, cap 300), window title synced by a

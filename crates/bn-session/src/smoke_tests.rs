@@ -487,6 +487,27 @@ fn notes_roundtrip_through_io_document() {
 }
 
 #[test]
+fn precision_roundtrips_through_io_document() {
+    let mut s = Session::new();
+    assert_eq!(s.doc().precision, crate::doc::DEFAULT_PRECISION);
+    ops::edit::set_precision(&mut s, 4);
+    assert!(s.doc().modified, "precision change must mark the doc modified");
+
+    let iodoc = s.doc().to_io_document();
+    let back = Document::from_io_document(iodoc, None);
+    assert_eq!(back.precision, 4);
+}
+
+#[test]
+fn set_precision_clamps_to_max() {
+    let mut s = Session::new();
+    ops::edit::set_precision(&mut s, 200);
+    assert_eq!(s.doc().precision, crate::doc::MAX_PRECISION);
+    ops::edit::set_precision(&mut s, 0);
+    assert_eq!(s.doc().precision, 0);
+}
+
+#[test]
 fn ai_draft_opens_as_new_tab_with_layout_and_beliefs() {
     let draft = crate::ai_draft::parse_draft(
         r#"{"name": "Draft", "nodes": [
