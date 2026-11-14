@@ -489,22 +489,102 @@ fn notes_roundtrip_through_io_document() {
 #[test]
 fn precision_roundtrips_through_io_document() {
     let mut s = Session::new();
-    assert_eq!(s.doc().precision, crate::doc::DEFAULT_PRECISION);
-    ops::edit::set_precision(&mut s, 4);
+    let id = ops::edit::add_node(&mut s, NodeKind::Chance, 0.0, 0.0).unwrap();
+    assert_eq!(s.doc().visual[id].precision, crate::doc::DEFAULT_PRECISION);
+    ops::edit::adjust_node_precision(&mut s, &[id], 2).unwrap();
+    assert_eq!(s.doc().visual[id].precision, 4);
     assert!(s.doc().modified, "precision change must mark the doc modified");
 
     let iodoc = s.doc().to_io_document();
+    let name = s.doc().net.node(id).name.clone();
+    assert_eq!(iodoc.visual.nodes[&name].precision, Some(4));
     let back = Document::from_io_document(iodoc, None);
-    assert_eq!(back.precision, 4);
+    let bid = back.net.node_ids()[0];
+    assert_eq!(back.visual[bid].precision, 4);
 }
 
 #[test]
-fn set_precision_clamps_to_max() {
+fn adjust_node_precision_clamps_and_skips_noops() {
     let mut s = Session::new();
-    ops::edit::set_precision(&mut s, 200);
-    assert_eq!(s.doc().precision, crate::doc::MAX_PRECISION);
-    ops::edit::set_precision(&mut s, 0);
-    assert_eq!(s.doc().precision, 0);
+    let id = ops::edit::add_node(&mut s, NodeKind::Chance, 0.0, 0.0).unwrap();
+    ops::edit::adjust_node_precision(&mut s, &[id], -5).unwrap();
+    assert_eq!(s.doc().visual[id].precision, 0, "clamped at the bottom");
+    // At the bound the op is a no-op: one undo reverts the REAL adjust, not
+    // a phantom step (same contract as unchanged_note_text).
+    ops::edit::adjust_node_precision(&mut s, &[id], -1).unwrap();
+    ops::edit::undo(&mut s);
+    assert_eq!(s.doc().visual[id].precision, crate::doc::DEFAULT_PRECISION);
+    // Top clamp.
+    ops::edit::adjust_node_precision(&mut s, &[id], 100).unwrap();
+    assert_eq!(s.doc().visual[id].precision, crate::doc::MAX_PRECISION);
+}
+
+#[test]
+fn node_precision_is_undoable() {
+    let mut s = Session::new();
+    let id = ops::edit::add_node(&mut s, NodeKind::Chance, 0.0, 0.0).unwrap();
+    ops::edit::adjust_node_precision(&mut s, &[id], 1).unwrap();
+    assert_eq!(s.doc().visual[id].precision, 3);
+    ops::edit::undo(&mut s);
+    assert_eq!(s.doc().visual[id].precision, 2);
+    ops::edit::redo(&mut s);
+    assert_eq!(s.doc().visual[id].precision, 3);
+}
+
+#[test]
+fn batch_precision_adjust_is_one_undo_step() {
+    let mut s = Session::new();
+    let a = ops::edit::add_node(&mut s, NodeKind::Chance, 0.0, 0.0).unwrap();
+    let b = ops::edit::add_node(&mut s, NodeKind::Chance, 200.0, 0.0).unwrap();
+    ops::edit::adjust_node_precision(&mut s, &[a, b], 1).unwrap();
+    assert_eq!(s.doc().visual[a].precision, 3);
+    assert_eq!(s.doc().visual[b].precision, 3);
+    ops::edit::undo(&mut s);
+    assert_eq!(s.doc().visual[a].precision, 2);
+    assert_eq!(s.doc().visual[b].precision, 2);
+}
+
+#[test]
+fn legacy_tab_precision_seeds_nodes() {
+    use bn_core::io;
+    use bn_core::model::{Network, State};
+    let two = || vec![State::new("y"), State::new("n")];
+
+    // A has a stored visual without a per-node precision (pre-per-node
+    // file); B is absent from the visual map entirely (autolayout arm).
+    let mut net = Network::new("t");
+    net.add_node("A", NodeKind::Chance, two()).unwrap();
+    net.add_node("B", NodeKind::Chance, two()).unwrap();
+    let mut visual = io::VisualInfo { precision: 4, ..Default::default() };
+    visual.nodes.insert(
+        "A".into(),
+        io::NodeVisual { x: 1.0, y: 2.0, display: Default::default(), color: None, precision: None },
+    );
+    let doc = Document::from_io_document(io::Document { network: net, visual }, None);
+    for id in doc.net.node_ids() {
+        assert_eq!(doc.visual[id].precision, 4, "node {}", doc.net.node(id).name);
+    }
+
+    // Out-of-range values from a hand-edited file clamp to MAX_PRECISION,
+    // both the tab seed and a per-node value.
+    let mut net = Network::new("t2");
+    net.add_node("A", NodeKind::Chance, two()).unwrap();
+    net.add_node("B", NodeKind::Chance, two()).unwrap();
+    let mut visual = io::VisualInfo { precision: 200, ..Default::default() };
+    visual.nodes.insert(
+        "A".into(),
+        io::NodeVisual {
+            x: 1.0,
+            y: 2.0,
+            display: Default::default(),
+            color: None,
+            precision: Some(200),
+        },
+    );
+    let doc = Document::from_io_document(io::Document { network: net, visual }, None);
+    for id in doc.net.node_ids() {
+        assert_eq!(doc.visual[id].precision, crate::doc::MAX_PRECISION);
+    }
 }
 
 #[test]

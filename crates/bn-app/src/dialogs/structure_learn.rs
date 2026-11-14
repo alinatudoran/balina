@@ -1,6 +1,7 @@
 //! Structure learning: 7 algorithms, background job with live progress and
-//! cancel. Editing the network while a job runs discards its result (the
-//! session enforces this via change_seq).
+//! cancel. Modeless so the canvas stays usable while a job runs — editing
+//! the network while a job runs discards its result (the session enforces
+//! this via change_seq).
 //!
 //! Async pattern: prepare (scoped SESSION write) → `platform::run_structure_job`
 //! (desktop: `spawn_blocking`; web: a Web Worker — no signal borrow held
@@ -16,9 +17,9 @@ use dioxus::prelude::*;
 use crate::dialogs::learn_cpts::file_label;
 use crate::platform::{pick_case_file, CaseFile};
 use crate::state::{
-    close_dialog, exec, exec_res, log_message, JOB_PROGRESS, LAST_CASE_FILE, SESSION,
+    close_dialog, exec, exec_res, log_message, show_toast, JOB_PROGRESS, LAST_CASE_FILE, SESSION,
 };
-use crate::ui::{Modal, NumberInput, BTN, BTN_PRIMARY, BTN_SM, SELECT};
+use crate::ui::{Modeless, NumberInput, BTN, BTN_PRIMARY, BTN_SM, SELECT};
 
 struct AlgoCfg {
     value: StructAlgo,
@@ -120,6 +121,7 @@ pub fn StructureLearnDialog() -> Element {
                             log_message(res.summary.clone());
                             report.set(Some(res.report));
                             *crate::canvas::controller::FIT_REQUEST.write() += 1;
+                            show_toast("Learned structures!");
                         }
                         Err(CmdError::Cancelled) => report.set(Some("Cancelled.".into())),
                         Err(e @ CmdError::Stale(_)) => report.set(Some(e.to_string())),
@@ -145,10 +147,9 @@ pub fn StructureLearnDialog() -> Element {
     let cn_forb_to = chance_nodes.clone();
 
     rsx! {
-        Modal {
+        Modeless {
             title: "Learn structure from cases",
             width: "max-w-lg",
-            draggable: false, // configuration dialog
             on_close: move |_| close_dialog(),
             footer: rsx! {
                 if *running.read() {

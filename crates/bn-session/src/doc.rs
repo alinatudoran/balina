@@ -34,11 +34,18 @@ pub struct NodeVisual {
     pub pos: Point,
     pub display: DisplayMode,
     pub color: Option<[u8; 3]>,
+    /// Decimal places shown on this node's monitor (0..=[`MAX_PRECISION`]).
+    pub precision: u8,
 }
 
 impl Default for NodeVisual {
     fn default() -> Self {
-        NodeVisual { pos: Point::default(), display: DisplayMode::BeliefBars, color: None }
+        NodeVisual {
+            pos: Point::default(),
+            display: DisplayMode::BeliefBars,
+            color: None,
+            precision: DEFAULT_PRECISION,
+        }
     }
 }
 
@@ -112,8 +119,6 @@ pub struct Document {
     pub notes: SlotMap<NoteId, Note>,
     pub evidence: Evidence,
     pub auto_update: bool,
-    /// Decimal places shown on node monitors (0..=8). Persisted in the file.
-    pub precision: u8,
     pub path: Option<PathBuf>,
     pub modified: bool,
     /// Model generation counter: bumped by every change that could affect
@@ -140,7 +145,6 @@ impl Document {
             notes: SlotMap::with_key(),
             evidence: Evidence::new(),
             auto_update: true,
-            precision: DEFAULT_PRECISION,
             path: None,
             modified: false,
             change_seq: 0,
@@ -255,7 +259,7 @@ impl Document {
             NodeKind::Utility => DisplayMode::ExpectedValue,
             _ => DisplayMode::BeliefBars,
         };
-        self.visual.insert(id, NodeVisual { pos, display, color: None });
+        self.visual.insert(id, NodeVisual { pos, display, color: None, precision: DEFAULT_PRECISION });
         Ok(id)
     }
 
@@ -363,7 +367,6 @@ impl Document {
             notes: self.notes.clone(),
             evidence: self.evidence.clone(),
             auto_update: self.auto_update,
-            precision: self.precision,
             path: None,
             modified: false,
             change_seq: 0,
@@ -380,7 +383,13 @@ impl Document {
             if let Some(node) = self.net.get(id) {
                 visual.nodes.insert(
                     node.name.clone(),
-                    io::NodeVisual { x: v.pos.x, y: v.pos.y, display: v.display, color: v.color },
+                    io::NodeVisual {
+                        x: v.pos.x,
+                        y: v.pos.y,
+                        display: v.display,
+                        color: v.color,
+                        precision: Some(v.precision),
+                    },
                 );
             }
         }
@@ -396,7 +405,6 @@ impl Document {
                 collapsed: n.collapsed,
             });
         }
-        visual.precision = self.precision;
         io::Document { network: self.net.clone(), visual }
     }
 
@@ -404,7 +412,8 @@ impl Document {
         let mut doc = Document::new();
         doc.net = iodoc.network;
         doc.path = path;
-        doc.precision = iodoc.visual.precision.min(MAX_PRECISION);
+        // Legacy tab-level precision seeds nodes without a per-node value.
+        let seed = iodoc.visual.precision.min(MAX_PRECISION);
         // Layout: use stored positions; auto-layout the rest by topo depth.
         let mut depth: SecondaryMap<NodeId, usize> = SecondaryMap::new();
         let mut count_at: Vec<usize> = vec![];
@@ -429,11 +438,13 @@ impl Document {
                     pos: Point::new(s.x, s.y),
                     display: s.display,
                     color: s.color,
+                    precision: s.precision.unwrap_or(seed).min(MAX_PRECISION),
                 },
                 None => NodeVisual {
                     pos: Point::new(60.0 + d as f32 * 240.0, 60.0 + row as f32 * 140.0),
                     display: DisplayMode::BeliefBars,
                     color: None,
+                    precision: seed,
                 },
             };
             doc.visual.insert(id, v);

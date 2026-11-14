@@ -213,7 +213,7 @@ fn node_render_data(doc: &Document, bridge: &EngineBridge, id: NodeId) -> NodeRe
         beliefs: bridge.beliefs.get(id).cloned(),
         decision_eu: bridge.decision_eu.get(id).cloned(),
         utility_ev: bridge.utility_ev.get(id).copied().filter(|v| v.is_finite()),
-        precision: doc.precision,
+        precision: v.map(|v| v.precision).unwrap_or(bn_session::DEFAULT_PRECISION),
     }
 }
 
@@ -430,12 +430,26 @@ mod tests {
     #[test]
     fn precision_setting_changes_belief_decimals() {
         let mut s = Session::default();
-        s.doc_mut().add_node_at(NodeKind::Chance, Point::new(0.0, 0.0)).unwrap();
+        let id = s.doc_mut().add_node_at(NodeKind::Chance, Point::new(0.0, 0.0)).unwrap();
         bn_session::ops::edit::recompute(&mut s);
-        bn_session::ops::edit::set_precision(&mut s, 0);
+        bn_session::ops::edit::adjust_node_precision(&mut s, &[id], -2).unwrap();
         let svg = network_svg(s.doc(), s.bridge()).unwrap();
         assert!(svg.contains(" 50<"), "0 decimals drops the point");
         assert!(!svg.contains(" 50.00<"));
+    }
+
+    #[test]
+    fn per_node_precision_renders_independently() {
+        let mut s = Session::default();
+        let a = s.doc_mut().add_node_at(NodeKind::Chance, Point::new(0.0, 0.0)).unwrap();
+        let b = s.doc_mut().add_node_at(NodeKind::Chance, Point::new(300.0, 0.0)).unwrap();
+        bn_session::ops::edit::recompute(&mut s);
+        bn_session::ops::edit::adjust_node_precision(&mut s, &[a], -2).unwrap();
+        bn_session::ops::edit::adjust_node_precision(&mut s, &[b], 1).unwrap();
+        let svg = network_svg(s.doc(), s.bridge()).unwrap();
+        assert!(svg.contains(" 50<"), "node a at 0 decimals");
+        assert!(svg.contains(" 50.000"), "node b at 3 decimals");
+        assert!(!svg.contains(" 50.00<"), "nothing left at the old default");
     }
 
     #[test]

@@ -117,7 +117,7 @@ enum Dirt { None < Evidence < Params < Structure }   // ordered; combine with .m
 | toggle/set/retract finding | Evidence |
 | set_cpt, parameter learning | Params |
 | add/delete node/edge, move_edge, state remap, kind change, undo/redo, structure learning | Structure |
-| move_nodes, set_display_mode, set_node_color, selection | None |
+| move_nodes, set_display_mode, set_node_color, adjust_node_precision, selection | None |
 
 `recompute` recompiles the Engine when dirt ≥ Params (compile is sub-ms),
 pushes the document evidence, refreshes beliefs via `all_beliefs()`, sets
@@ -227,9 +227,10 @@ Gesture behavior:
   plain click adds at view center.
 - Context menus: fixed panel + full-screen click-catcher (the upstream
   overlay pattern). Node: Properties…, CPT/Utility table… (hidden for
-  decisions), Display-as radios, Likelihood finding… (chance only), Remove
-  finding, Delete. Edge: Delete link. Pane: Add chance/decision/utility
-  node here, Remove all findings, Fit view.
+  decisions), Display-as radios, Increase/Decrease precision (per-node,
+  greyed at 0/8), Likelihood finding… (chance only), Remove finding,
+  Delete. Edge: Delete link. Pane: Add chance/decision/utility node here,
+  Remove all findings, Fit view.
 
 `BnNode` is the HTML/CSS port of `paint_node`: kind palette (chance
 lemon/tan, decision blue, utility pink — exact RGB in `node.rs`), belief
@@ -260,8 +261,9 @@ item handle lives in a thread-local for `sync_auto_update_item`.
   (and the CPT editor's cell inputs). Every free-text input MUST use those
   components — a raw `input {}` silently breaks the guard.
 
-Chrome: `Toolbar` (palette, monitor decimal precision −/+ [doc-level,
-0..=8, persisted], ⚡ Compile, auto-update, fit view, zoom %),
+Chrome: `Toolbar` (palette, selected-node decimal precision −/+ [per-node,
+0..=8, persisted, undoable; disabled with no node selected], ⚡ Compile,
+auto-update, fit view, zoom %),
 `StatusBar` (name + `*`, Compiled/Stale/⚠ conflict, P(findings) via
 `exp(log_p_e)`, node/link counts, update ms, log toggle), `MessageLog`
 (monospace, stick-to-bottom, cap 300), window title synced by a

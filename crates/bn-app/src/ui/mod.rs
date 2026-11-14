@@ -5,7 +5,7 @@
 use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
 
-use crate::state::TYPING;
+use crate::state::{TOAST, TYPING};
 
 pub const BTN: &str = "inline-flex h-8 cursor-default items-center justify-center gap-1 \
     rounded-md border bg-background px-3 text-sm shadow-xs hover:bg-accent \
@@ -37,9 +37,8 @@ impl PanelDrag {
     }
 }
 
-/// Draggable title bar + full-screen capture layer while dragging (mouse
-/// events keep arriving even during fast drags; a release outside the
-/// window shows up as a move with no held buttons).
+/// Draggable title bar. Mouse events during the drag are handled by
+/// [`DragCapture`], which the host panel renders as a sibling.
 #[component]
 fn PanelTitleBar(
     title: String,
@@ -72,6 +71,19 @@ fn PanelTitleBar(
                 "✕"
             }
         }
+    }
+}
+
+/// Full-screen capture layer while a panel drag is in flight (mouse events
+/// keep arriving even during fast drags; a release outside the window shows
+/// up as a move with no held buttons). MUST be a SIBLING of the panel, not
+/// a child: the panel's `transform` makes it the containing block for fixed
+/// descendants, so inside the panel `inset-0` only covers the panel itself
+/// and a fast drag escapes the layer (the panel stops following).
+#[component]
+fn DragCapture(state: Signal<PanelDrag>) -> Element {
+    let mut state = state;
+    rsx! {
         if state.read().drag.is_some() {
             div {
                 class: "fixed inset-0 z-[70] cursor-move",
@@ -121,6 +133,7 @@ pub fn Modal(
                 div { class: "flex justify-end gap-2", {f} }
             }
         }
+        DragCapture { state }
     }
 }
 
@@ -131,6 +144,7 @@ pub fn Modal(
 pub fn Modeless(
     title: String,
     on_close: EventHandler<()>,
+    #[props(optional)] footer: Option<Element>,
     #[props(default = "max-w-lg".to_string())] width: String,
     children: Element,
 ) -> Element {
@@ -144,6 +158,55 @@ pub fn Modeless(
             onmousedown: move |ev| ev.stop_propagation(),
             PanelTitleBar { title, on_close, draggable: true, state }
             {children}
+            if let Some(f) = footer {
+                div { class: "flex justify-end gap-2", {f} }
+            }
+        }
+        DragCapture { state }
+    }
+}
+
+/// How long a toast stays up before [`ToastHost`] dismisses it.
+const TOAST_DISMISS_MS: u64 = 3000;
+
+/// Success toast pinned to the top center, above modals. Purely
+/// presentational — mount through [`ToastHost`], which owns dismissal.
+#[component]
+pub fn Toast(message: String) -> Element {
+    rsx! {
+        div { class: "pointer-events-none fixed top-3 left-1/2 z-[80] -translate-x-1/2",
+            div {
+                class: "flex items-center gap-2 rounded-md border border-green-200 bg-green-50 \
+                        px-4 py-2 text-sm text-green-800 shadow-lg",
+                span { class: "font-semibold", "✓" }
+                "{message}"
+            }
+        }
+    }
+}
+
+/// Renders the single-slot global toast ([`crate::state::TOAST`]) and
+/// auto-dismisses it. The sequence number keeps a timer from an
+/// already-replaced toast from cutting the newer one short.
+#[component]
+pub fn ToastHost() -> Element {
+    use_effect(|| {
+        let Some(seq) = TOAST.read().as_ref().map(|(s, _)| *s) else {
+            return;
+        };
+        spawn(async move {
+            crate::platform::sleep_ms(TOAST_DISMISS_MS).await;
+            // Copy the check out — never write while a peek guard is alive.
+            let current = TOAST.peek().as_ref().is_some_and(|(s, _)| *s == seq);
+            if current {
+                *TOAST.write() = None;
+            }
+        });
+    });
+    let message = TOAST.read().as_ref().map(|(_, m)| m.clone());
+    rsx! {
+        if let Some(message) = message {
+            Toast { message }
         }
     }
 }

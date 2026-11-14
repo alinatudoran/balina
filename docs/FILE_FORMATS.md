@@ -36,9 +36,12 @@ Versioned JSON:
           "experience": null, "comment": "" },
         ...
       ],
-      "visual": { "VisitAsia": {"x": 40.0, "y": 40.0, "display": "BeliefBars", "color": null}, ... },
+      "visual": { "VisitAsia": {"x": 40.0, "y": 40.0, "display": "BeliefBars", "color": null,
+                                "precision": 2}, ... },  // decimals (0..=8), per NODE
       "notes": [],
-      "precision": 2              // monitor decimal places (0..=8), per tab
+      "precision": 2              // legacy tab-level decimals: seed for nodes
+                                  // without a per-node value (pre-per-node
+                                  // files); still written for old readers
     }
   ]
 }
@@ -52,6 +55,7 @@ Versioned JSON:
 - Visual is keyed by node **name** (slotmap keys are meaningless across
   sessions). Rename-then-save is fine because saving re-derives the map from
   live NodeIds.
+- XMLBIF/XDSL drop per-node `precision` silently, like `display`/`color`.
 - Not yet persisted: evidence, camera, net-level window state (ROADMAP).
 
 ## XMLBIF v0.3 (io/xmlbif.rs)

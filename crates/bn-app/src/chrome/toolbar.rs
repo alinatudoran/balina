@@ -1,14 +1,14 @@
 //! Toolbar: node palette (click to add at view center, drag onto canvas),
 //! compile, auto-update, fit view, zoom display.
 
-use bn_core::model::NodeKind;
+use bn_core::model::{NodeId, NodeKind};
 use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
 use icons::{DecimalsArrowLeft, DecimalsArrowRight, Diamond, Dices, SquareSplitVertical, StickyNote};
 
 use crate::canvas::canvas::default_node_footprint;
 use crate::canvas::controller::{self, Gesture, PaletteItem, FIT_REQUEST, GESTURE, VIEWPORT};
-use crate::state::{exec, SESSION};
+use crate::state::{exec, SELECTION, SESSION};
 
 const BTN: &str = "inline-flex h-7 cursor-default items-center gap-1 rounded-md border \
                    bg-background px-2 text-xs shadow-xs hover:bg-accent";
@@ -61,7 +61,21 @@ pub fn add_at_center(item: PaletteItem) {
 #[component]
 pub fn Toolbar() -> Element {
     let auto_update = SESSION.read().doc().auto_update;
-    let precision = SESSION.read().doc().precision;
+    // Precision is per selected node: a button is enabled iff at least one
+    // selected node can still move in that direction (so an enabled button
+    // always changes something, mirroring the op's no-op guard).
+    let (can_dec, can_inc) = {
+        let s = SESSION.read();
+        let sel = SELECTION.read();
+        let (mut dec, mut inc) = (false, false);
+        for &id in &sel.nodes {
+            if let Some(v) = s.doc().visual.get(id) {
+                dec |= v.precision > 0;
+                inc |= v.precision < bn_session::MAX_PRECISION;
+            }
+        }
+        (dec, inc)
+    };
     let zoom_pct = (VIEWPORT.read().zoom * 100.0).round() as i32;
 
     rsx! {
@@ -89,27 +103,23 @@ pub fn Toolbar() -> Element {
             div { class: "h-5 w-px bg-border" }
             button {
                 class: "{BTN} disabled:opacity-40",
-                title: "Decrease decimal precision",
-                disabled: precision == 0,
+                title: "Decrease precision on selected nodes",
+                disabled: !can_dec,
                 onclick: move |_| {
-                    exec(|s| {
-                        let p = s.doc().precision.saturating_sub(1);
-                        bn_session::ops::edit::set_precision(s, p);
-                        Ok(())
-                    });
+                    // Copy ids out first — exec prunes the selection, so a
+                    // held SELECTION read guard would panic.
+                    let ids: Vec<NodeId> = SELECTION.read().nodes.iter().copied().collect();
+                    exec(|s| bn_session::ops::edit::adjust_node_precision(s, &ids, -1));
                 },
                 DecimalsArrowLeft { class: Some("size-3.5".to_string()) }
             }
             button {
                 class: "{BTN} disabled:opacity-40",
-                title: "Increase decimal precision",
-                disabled: precision >= bn_session::MAX_PRECISION,
+                title: "Increase precision on selected nodes",
+                disabled: !can_inc,
                 onclick: move |_| {
-                    exec(|s| {
-                        let p = s.doc().precision.saturating_add(1);
-                        bn_session::ops::edit::set_precision(s, p);
-                        Ok(())
-                    });
+                    let ids: Vec<NodeId> = SELECTION.read().nodes.iter().copied().collect();
+                    exec(|s| bn_session::ops::edit::adjust_node_precision(s, &ids, 1));
                 },
                 DecimalsArrowRight { class: Some("size-3.5".to_string()) }
             }

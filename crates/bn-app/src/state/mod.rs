@@ -207,6 +207,18 @@ pub fn close_dialog() {
     *DIALOG.write() = None;
 }
 
+/// Transient top-center toast (single slot). The sequence number lets the
+/// auto-dismiss timer in `ui::ToastHost` tell "my toast is still up" from
+/// "a newer toast replaced it".
+pub static TOAST: GlobalSignal<Option<(u64, String)>> = Signal::global(|| None);
+
+/// Show a transient success toast (replaces any toast already showing).
+pub fn show_toast(msg: impl Into<String>) {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    *TOAST.write() = Some((seq, msg.into()));
+}
+
 pub fn log_message(msg: impl Into<String>) {
     let mut m = MESSAGES.write();
     m.push(msg.into());

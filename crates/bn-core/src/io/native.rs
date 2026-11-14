@@ -37,6 +37,8 @@ struct TabDto {
     visual: HashMap<String, NodeVisual>,
     #[serde(default)]
     notes: Vec<NoteInfo>,
+    /// Legacy tab-level decimals: the seed for nodes whose visual carries no
+    /// per-node `precision`. Still written for old readers.
     #[serde(default = "crate::io::default_precision")]
     precision: u8,
 }

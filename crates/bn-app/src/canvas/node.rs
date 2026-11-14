@@ -127,7 +127,7 @@ fn read_node_data(id: NodeId) -> Option<NodeData> {
         beliefs: s.bridge().beliefs.get(id).cloned(),
         decision_eu: s.bridge().decision_eu.get(id).cloned(),
         utility_ev: s.bridge().utility_ev.get(id).copied().filter(|v| v.is_finite()),
-        precision: s.doc().precision,
+        precision: v.map(|v| v.precision).unwrap_or(bn_session::DEFAULT_PRECISION),
     })
 }
 
