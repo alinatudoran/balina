@@ -11,7 +11,7 @@ fn two() -> Vec<State> {
 fn place(visual: &mut VisualInfo, name: &str, x: f32, y: f32) {
     visual.nodes.insert(
         name.into(),
-        NodeVisual { x, y, display: Default::default(), color: None },
+        NodeVisual { x, y, display: Default::default(), color: None, precision: None },
     );
 }
 

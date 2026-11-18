@@ -136,7 +136,10 @@ pub fn from_xml(text: &str) -> Result<Document, IoError> {
         if let Some((x, y)) = v.position {
             visual
                 .nodes
-                .insert(v.name.clone(), NodeVisual { x, y, display: Default::default(), color: None });
+                .insert(
+                    v.name.clone(),
+                    NodeVisual { x, y, display: Default::default(), color: None, precision: None },
+                );
         }
     }
     for d in &defs {

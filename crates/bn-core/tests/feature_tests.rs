@@ -403,6 +403,16 @@ fn native_json_roundtrip() {
         font_size: 15.0,
         collapsed: true,
     });
+    doc.visual.nodes.insert(
+        "VisitAsia".into(),
+        io::NodeVisual {
+            x: 12.0,
+            y: 34.0,
+            display: io::DisplayMode::ExpectedValue,
+            color: Some([10, 20, 30]),
+            precision: Some(3),
+        },
+    );
     let (text, warn) = io::save_str(&doc, Format::NativeJson).unwrap();
     assert!(warn.is_empty());
     let back = io::load_str(&text, Format::NativeJson).unwrap();
@@ -413,6 +423,7 @@ fn native_json_roundtrip() {
         assert_close(ba, bb, 1e-12, na);
     }
     assert_eq!(back.visual.notes, doc.visual.notes);
+    assert_eq!(back.visual.nodes["VisitAsia"], doc.visual.nodes["VisitAsia"]);
     // Stable: save(load(x)) == save(x)
     let (text2, _) = io::save_str(&back, Format::NativeJson).unwrap();
     assert_eq!(text, text2);
@@ -430,6 +441,70 @@ fn native_json_without_notes_field_still_loads() {
     };
     let back = io::load_str(&stripped, Format::NativeJson).unwrap();
     assert!(back.visual.notes.is_empty());
+}
+
+#[test]
+fn native_json_without_precision_field_defaults_to_2() {
+    // Files written before the precision setting existed have no `precision` key.
+    let doc = Document { network: asia(), visual: Default::default() };
+    let (text, _) = io::save_str(&doc, Format::NativeJson).unwrap();
+    let stripped = {
+        let mut v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        for tab in v["tabs"].as_array_mut().unwrap() {
+            tab.as_object_mut().unwrap().remove("precision");
+        }
+        v.to_string()
+    };
+    let back = io::load_str(&stripped, Format::NativeJson).unwrap();
+    assert_eq!(back.visual.precision, 2);
+}
+
+#[test]
+fn native_json_precision_roundtrips() {
+    // Per-node precision and the legacy tab-level seed both survive.
+    let mut doc = Document { network: asia(), visual: Default::default() };
+    doc.visual.precision = 4;
+    doc.visual.nodes.insert(
+        "Smoking".into(),
+        io::NodeVisual {
+            x: 0.0,
+            y: 0.0,
+            display: Default::default(),
+            color: None,
+            precision: Some(5),
+        },
+    );
+    let (text, _) = io::save_str(&doc, Format::NativeJson).unwrap();
+    let back = io::load_str(&text, Format::NativeJson).unwrap();
+    assert_eq!(back.visual.precision, 4);
+    assert_eq!(back.visual.nodes["Smoking"].precision, Some(5));
+}
+
+#[test]
+fn legacy_node_visual_without_precision_loads_as_none() {
+    // Node visuals written before per-node precision have no `precision` key.
+    let mut doc = Document { network: asia(), visual: Default::default() };
+    doc.visual.nodes.insert(
+        "Smoking".into(),
+        io::NodeVisual {
+            x: 0.0,
+            y: 0.0,
+            display: Default::default(),
+            color: None,
+            precision: Some(3),
+        },
+    );
+    let (text, _) = io::save_str(&doc, Format::NativeJson).unwrap();
+    let stripped = {
+        let mut v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        for tab in v["tabs"].as_array_mut().unwrap() {
+            let vis = tab["visual"]["Smoking"].as_object_mut().unwrap();
+            vis.remove("precision");
+        }
+        v.to_string()
+    };
+    let back = io::load_str(&stripped, Format::NativeJson).unwrap();
+    assert_eq!(back.visual.nodes["Smoking"].precision, None);
 }
 
 #[test]

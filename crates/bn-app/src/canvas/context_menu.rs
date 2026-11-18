@@ -71,7 +71,7 @@ pub fn ContextMenuHost() -> Element {
 
 #[component]
 fn NodeMenu(id: NodeId) -> Element {
-    let (kind, display, has_finding) = {
+    let (kind, display, has_finding, precision) = {
         let s = SESSION.read();
         if !s.doc().net.contains(id) {
             return rsx! {};
@@ -80,6 +80,11 @@ fn NodeMenu(id: NodeId) -> Element {
             s.doc().net.node(id).kind,
             s.doc().visual.get(id).map(|v| v.display).unwrap_or_default(),
             s.doc().evidence.get(id).is_some(),
+            s.doc()
+                .visual
+                .get(id)
+                .map(|v| v.precision)
+                .unwrap_or(bn_session::DEFAULT_PRECISION),
         )
     };
 
@@ -118,6 +123,25 @@ fn NodeMenu(id: NodeId) -> Element {
                 span { class: "w-4", if display == mode { "•" } else { "" } }
                 "{label}"
             }
+        }
+        div { class: "my-1 border-t" }
+        button {
+            class: "{ITEM} disabled:opacity-40",
+            disabled: precision >= bn_session::MAX_PRECISION,
+            onclick: move |_| {
+                close();
+                exec(|s| bn_session::ops::edit::adjust_node_precision(s, &[id], 1));
+            },
+            "Increase precision"
+        }
+        button {
+            class: "{ITEM} disabled:opacity-40",
+            disabled: precision == 0,
+            onclick: move |_| {
+                close();
+                exec(|s| bn_session::ops::edit::adjust_node_precision(s, &[id], -1));
+            },
+            "Decrease precision"
         }
         if kind == NodeKind::Chance {
             div { class: "my-1 border-t" }

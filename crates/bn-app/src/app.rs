@@ -151,6 +151,7 @@ pub fn App() -> Element {
             MessageLog {}
             ContextMenuHost {}
             crate::dialogs::host::DialogHost {}
+            crate::ui::ToastHost {}
             if let Some((item, (gx, gy))) = palette_ghost {
                 {
                     let (bg, label) = match item {

@@ -34,11 +34,18 @@ pub struct NodeVisual {
     pub pos: Point,
     pub display: DisplayMode,
     pub color: Option<[u8; 3]>,
+    /// Decimal places shown on this node's monitor (0..=[`MAX_PRECISION`]).
+    pub precision: u8,
 }
 
 impl Default for NodeVisual {
     fn default() -> Self {
-        NodeVisual { pos: Point::default(), display: DisplayMode::BeliefBars, color: None }
+        NodeVisual {
+            pos: Point::default(),
+            display: DisplayMode::BeliefBars,
+            color: None,
+            precision: DEFAULT_PRECISION,
+        }
     }
 }
 
@@ -49,6 +56,10 @@ pub const NOTE_COLLAPSED_H: f32 = 24.0;
 pub const NOTE_DEFAULT_COLOR: [u8; 3] = [255, 244, 165]; // sticky yellow
 pub const NOTE_FONT_DEFAULT: f32 = 13.0;
 pub const NOTE_FONT_RANGE: (f32, f32) = (8.0, 32.0);
+
+/// Decimal places shown on node monitors.
+pub const DEFAULT_PRECISION: u8 = 2;
+pub const MAX_PRECISION: u8 = 8;
 
 /// A sticky note on the canvas. Pure annotation: lives outside the network,
 /// so it can never affect inference or learning.
@@ -248,7 +259,7 @@ impl Document {
             NodeKind::Utility => DisplayMode::ExpectedValue,
             _ => DisplayMode::BeliefBars,
         };
-        self.visual.insert(id, NodeVisual { pos, display, color: None });
+        self.visual.insert(id, NodeVisual { pos, display, color: None, precision: DEFAULT_PRECISION });
         Ok(id)
     }
 
@@ -372,7 +383,13 @@ impl Document {
             if let Some(node) = self.net.get(id) {
                 visual.nodes.insert(
                     node.name.clone(),
-                    io::NodeVisual { x: v.pos.x, y: v.pos.y, display: v.display, color: v.color },
+                    io::NodeVisual {
+                        x: v.pos.x,
+                        y: v.pos.y,
+                        display: v.display,
+                        color: v.color,
+                        precision: Some(v.precision),
+                    },
                 );
             }
         }
@@ -395,6 +412,8 @@ impl Document {
         let mut doc = Document::new();
         doc.net = iodoc.network;
         doc.path = path;
+        // Legacy tab-level precision seeds nodes without a per-node value.
+        let seed = iodoc.visual.precision.min(MAX_PRECISION);
         // Layout: use stored positions; auto-layout the rest by topo depth.
         let mut depth: SecondaryMap<NodeId, usize> = SecondaryMap::new();
         let mut count_at: Vec<usize> = vec![];
@@ -419,11 +438,13 @@ impl Document {
                     pos: Point::new(s.x, s.y),
                     display: s.display,
                     color: s.color,
+                    precision: s.precision.unwrap_or(seed).min(MAX_PRECISION),
                 },
                 None => NodeVisual {
                     pos: Point::new(60.0 + d as f32 * 240.0, 60.0 + row as f32 * 140.0),
                     display: DisplayMode::BeliefBars,
                     color: None,
+                    precision: seed,
                 },
             };
             doc.visual.insert(id, v);

@@ -21,7 +21,7 @@ pub enum DisplayMode {
     ExpectedValue,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct NodeVisual {
     pub x: f32,
     pub y: f32,
@@ -29,6 +29,10 @@ pub struct NodeVisual {
     pub display: DisplayMode,
     #[serde(default)]
     pub color: Option<[u8; 3]>,
+    /// Per-node monitor decimals (0..=8). `None` in files saved before
+    /// per-node precision; the loader falls back to tab-level `precision`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub precision: Option<u8>,
 }
 
 /// A free-floating sticky note on the canvas. Pure annotation: not tied to
@@ -55,13 +59,27 @@ fn default_note_color() -> [u8; 3] {
 fn default_note_font() -> f32 {
     13.0
 }
+pub(crate) fn default_precision() -> u8 {
+    2
+}
 
 /// Layout metadata, keyed by node name (stable across sessions).
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VisualInfo {
     pub nodes: HashMap<String, NodeVisual>,
     #[serde(default)]
     pub notes: Vec<NoteInfo>,
+    /// Legacy tab-level decimal places (0..=8): the seed for nodes whose
+    /// `NodeVisual` has no per-node `precision` (files saved before
+    /// per-node precision existed). Still written for old readers.
+    #[serde(default = "default_precision")]
+    pub precision: u8,
+}
+
+impl Default for VisualInfo {
+    fn default() -> Self {
+        VisualInfo { nodes: HashMap::new(), notes: Vec::new(), precision: default_precision() }
+    }
 }
 
 #[derive(Clone, Debug, Default)]

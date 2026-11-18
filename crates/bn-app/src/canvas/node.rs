@@ -47,7 +47,9 @@ pub fn belief_row_display(
     beliefs: Option<&[f64]>,
     decision_eu: Option<&[Option<f64>]>,
     finding_here: bool,
+    precision: u8,
 ) -> (String, f64, &'static str) {
+    let prec = precision as usize;
     if kind == NodeKind::Decision {
         let eu = decision_eu.and_then(|v| v.get(s).copied().flatten());
         if let (Some(eu), Some(eus)) = (eu, decision_eu) {
@@ -55,14 +57,14 @@ pub fn belief_row_display(
             let lo = vals.iter().copied().fold(f64::INFINITY, f64::min);
             let hi = vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             let frac = if hi > lo { (eu - lo) / (hi - lo) } else { 1.0 };
-            (format!("{eu:.2}"), frac, BAR_BLUE)
+            (format!("{eu:.prec$}"), frac, BAR_BLUE)
         } else if let Some(b) = beliefs {
-            (pct(b[s]), b[s], BAR_BLUE)
+            (pct(b[s], precision), b[s], BAR_BLUE)
         } else {
             ("--".into(), 0.0, "gray")
         }
     } else if let Some(b) = beliefs {
-        (pct(b[s]), b[s], if finding_here { BAR_FINDING } else { BAR_ORANGE })
+        (pct(b[s], precision), b[s], if finding_here { BAR_FINDING } else { BAR_ORANGE })
     } else {
         ("--".into(), 0.0, "gray")
     }
@@ -98,6 +100,7 @@ struct NodeData {
     beliefs: Option<Vec<f64>>,
     decision_eu: Option<Vec<Option<f64>>>,
     utility_ev: Option<f64>,
+    precision: u8,
 }
 
 fn read_node_data(id: NodeId) -> Option<NodeData> {
@@ -124,6 +127,7 @@ fn read_node_data(id: NodeId) -> Option<NodeData> {
         beliefs: s.bridge().beliefs.get(id).cloned(),
         decision_eu: s.bridge().decision_eu.get(id).cloned(),
         utility_ev: s.bridge().utility_ev.get(id).copied().filter(|v| v.is_finite()),
+        precision: v.map(|v| v.precision).unwrap_or(bn_session::DEFAULT_PRECISION),
     })
 }
 
@@ -158,9 +162,10 @@ pub fn BnNode(id: NodeId, rect: Rect) -> Element {
     let base_title = if d.title.is_empty() { d.name.clone() } else { d.title.clone() };
     let title = format!("{base_title}{}", if d.has_finding { " ⏺" } else { "" });
 
+    let prec = d.precision as usize;
     let ev_text = if d.kind == NodeKind::Utility {
         match d.utility_ev {
-            Some(v) => format!("EU = {v:.2}"),
+            Some(v) => format!("EU = {v:.prec$}"),
             None => "EU = --".into(),
         }
     } else {
@@ -171,7 +176,7 @@ pub fn BnNode(id: NodeId, rect: Rect) -> Element {
             .map(|(n, v)| bn_core::model::State { name: n.clone(), value: *v })
             .collect();
         match expected_value(&states, d.beliefs.as_deref()) {
-            Some(v) => format!("E = {v:.3}"),
+            Some(v) => format!("E = {v:.prec$}"),
             None => "E = --".into(),
         }
     };
@@ -186,7 +191,7 @@ pub fn BnNode(id: NodeId, rect: Rect) -> Element {
         let beliefs = d.beliefs.as_deref();
         variance(&states, beliefs).map(|var| {
             let ev = expected_value(&states, beliefs).unwrap_or(f64::NAN);
-            format!("E = {ev:.3}  σ = {:.3}", var.sqrt())
+            format!("E = {ev:.prec$}  σ = {:.prec$}", var.sqrt())
         })
     } else {
         None
@@ -379,6 +384,7 @@ fn BeliefRow(id: NodeId, s: usize, d: NodeData) -> Element {
         d.beliefs.as_deref(),
         d.decision_eu.as_deref(),
         finding_here,
+        d.precision,
     );
 
     let bar_w = (frac.min(1.0) * 100.0).max(0.0);

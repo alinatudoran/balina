@@ -174,7 +174,10 @@ pub fn from_xml(text: &str) -> Result<Document, IoError> {
         if let Some(&(x, y)) = positions.get(&n.id) {
             visual
                 .nodes
-                .insert(n.id.clone(), NodeVisual { x, y, display: Default::default(), color: None });
+                .insert(
+                    n.id.clone(),
+                    NodeVisual { x, y, display: Default::default(), color: None, precision: None },
+                );
         }
     }
     Ok(Document { network: net, visual })

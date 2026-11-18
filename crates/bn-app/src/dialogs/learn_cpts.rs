@@ -5,7 +5,7 @@ use bn_session::ops::learn::{LearnCptsOpts, LearnMethod};
 use dioxus::prelude::*;
 
 use crate::platform::{pick_case_file, CaseFile};
-use crate::state::{close_dialog, exec_res, log_message, LAST_CASE_FILE};
+use crate::state::{close_dialog, exec_res, log_message, show_toast, LAST_CASE_FILE};
 use crate::ui::{Modal, NumberInput, BTN, BTN_PRIMARY, BTN_SM};
 
 pub fn file_label(f: &Option<CaseFile>) -> String {
@@ -43,6 +43,7 @@ pub fn LearnCptsDialog() -> Element {
                     log_message(res.summary);
                     report.set(Some(res.report));
                     *crate::canvas::controller::FIT_REQUEST.write() += 1;
+                    show_toast("Cases loaded!");
                 }
                 Err(e) => report.set(Some(format!("Learning failed: {e}"))),
             }

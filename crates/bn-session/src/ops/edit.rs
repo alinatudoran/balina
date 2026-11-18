@@ -3,7 +3,7 @@
 use bn_core::io::DisplayMode;
 use bn_core::model::{NodeId, NodeKind, State};
 
-use crate::doc::{Dirt, NoteId, Point, NOTE_FONT_RANGE, NOTE_MIN_SIZE};
+use crate::doc::{Dirt, NoteId, Point, MAX_PRECISION, NOTE_FONT_RANGE, NOTE_MIN_SIZE};
 use crate::error::CmdError;
 use crate::session::Session;
 use crate::views::{check_node, check_note, NodePropsPatch};
@@ -250,6 +250,33 @@ pub fn set_node_color(
     s.doc_mut().begin_visual_change();
     if let Some(v) = s.doc_mut().visual.get_mut(node) {
         v.color = color;
+    }
+    Ok(())
+}
+
+/// Adjust monitor decimal precision on `nodes` by `delta`, each clamped to
+/// 0..=[`MAX_PRECISION`], as ONE undoable visual step. No-op (no undo step,
+/// no modified flag) when nothing would change.
+pub fn adjust_node_precision(
+    s: &mut Session,
+    nodes: &[NodeId],
+    delta: i8,
+) -> Result<(), CmdError> {
+    for &id in nodes {
+        check_node(&s.doc().net, id)?;
+    }
+    let next = |p: u8| (p as i16 + delta as i16).clamp(0, MAX_PRECISION as i16) as u8;
+    let changes = nodes
+        .iter()
+        .any(|&id| s.doc().visual.get(id).is_some_and(|v| next(v.precision) != v.precision));
+    if !changes {
+        return Ok(());
+    }
+    s.doc_mut().begin_visual_change();
+    for &id in nodes {
+        if let Some(v) = s.doc_mut().visual.get_mut(id) {
+            v.precision = next(v.precision);
+        }
     }
     Ok(())
 }
